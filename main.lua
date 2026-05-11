@@ -49,25 +49,60 @@ end
 
 function startGame(filename)
     resetGame()
+
+    if not filename then
+        return
+    end
     
     -- Load the chosen package
-    local success = love.filesystem.mount("songs/" .. filename, "loaded_song")
+    local archivePath = "songs/" .. filename
+    local success = love.filesystem.mount(archivePath, "loaded_song")
     if not success then return end
 
     local manifestData = love.filesystem.read("loaded_song/manifest.json")
-    currentSongInfo = json:decode(manifestData)
+    if not manifestData then
+        love.filesystem.unmount(archivePath)
+        return
+    end
+
+    local okManifest, decodedManifest = pcall(json.decode, json, manifestData)
+    if not okManifest or not decodedManifest then
+        love.filesystem.unmount(archivePath)
+        return
+    end
+
+    currentSongInfo = decodedManifest
     currentSongInfo.filename = filename
 
     if currentSongInfo.audio then
-        bgm = love.audio.newSource("loaded_song/" .. currentSongInfo.audio, "stream")
-        bgm:setVolume(0.8)
+        local okAudio, source = pcall(love.audio.newSource, "loaded_song/" .. currentSongInfo.audio, "stream")
+        if okAudio and source then
+            bgm = source
+            bgm:setVolume(0.8)
+        else
+            bgm = nil
+        end
+    end
+
+    if not currentSongInfo.difficulties or not currentSongInfo.difficulties.hard then
+        love.filesystem.unmount(archivePath)
+        return
     end
 
     local chartData = love.filesystem.read("loaded_song/" .. currentSongInfo.difficulties.hard)
     if chartData then
-        chart = json:decode(chartData)
+        local okChart, decodedChart = pcall(json.decode, json, chartData)
+        if not okChart or type(decodedChart) ~= "table" or type(decodedChart.notes) ~= "table" then
+            love.filesystem.unmount(archivePath)
+            return
+        end
+
+        chart = decodedChart
         bpm = currentSongInfo.bpm
         totalPossibleNotes = #chart.notes
+    else
+        love.filesystem.unmount(archivePath)
+        return
     end
 
     local delaySeconds = (spawnAheadBeats * 60) / bpm
@@ -80,6 +115,7 @@ function returnToMenu()
     if currentSongInfo.filename then
         love.filesystem.unmount("songs/" .. currentSongInfo.filename)
     end
+    currentSongInfo = {}
     resetGame()
     Menu.load()
     gameState = "menu"
