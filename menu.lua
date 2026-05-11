@@ -78,6 +78,12 @@ function Menu.load()
             end
         end
     end
+
+    if #Menu.songs == 0 then
+        Menu.selectedIndex = 0
+    else
+        Menu.selectedIndex = math.max(1, math.min(Menu.selectedIndex, #Menu.songs))
+    end
 end
 
 function Menu.importLRG(path)
@@ -176,8 +182,14 @@ end
 
 function Menu.wheelmoved(x, y)
     -- Scrolling the list
+    local _, sh = love.graphics.getDimensions()
+    local itemHeight = 70
+    local listHeight = #Menu.songs * itemHeight
+    local minScroll = math.min(0, sh - listHeight)
+
     Menu.scroll = Menu.scroll + (y * 40)
     if Menu.scroll > 0 then Menu.scroll = 0 end
+    if Menu.scroll < minScroll then Menu.scroll = minScroll end
 end
 
 function Menu.draw()
