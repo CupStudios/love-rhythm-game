@@ -1,8 +1,9 @@
 local json = require "json"
 local Menu = require "menu"
 
-local gameState = "menu" -- Can be "menu" or "play"
+local gameState = "menu" -- Can be "menu", "play", or "results"
 
+local loadedChart = { notes = {} }
 local chart = { notes = {} }
 local activeNotes = {}
 local songTime = 0
@@ -15,6 +16,8 @@ local endTimer = 0 -- To handle waiting a few seconds after the song ends
 
 -- Scoring and Stats
 local score, combo, maxCombo, hits, totalPossibleNotes = 0, 0, 0, 0, 0
+local judgments = { marvelous = 0, perfect = 0, great = 0, good = 0, miss = 0 }
+local finalResults = nil
 
 local notesFinished = 0
 
@@ -31,19 +34,31 @@ local keys = { d = 1, f = 2, j = 3, k = 4, l = 4 }
 
 local beatFlash = 0
 local lastBeat = -1
+local globalOffsetMs = 0
+local currentSongOffsetMs = 0
+local timingWindows = {
+    marvelous = 18,
+    perfect = 35,
+    great = 60,
+    good = 90
+}
 
 local importedMessage = ""
 local importedMessageTimer = 0
 
 function resetGame()
     score, combo, maxCombo, hits = 0, 0, 0, 0
+    judgments = { marvelous = 0, perfect = 0, great = 0, good = 0, miss = 0 }
     activeNotes = {}
+    chart = { notes = {} }
     notesFinished = 0
+    totalPossibleNotes = 0
     hitParticles = {}
     receptorFlashes = {0, 0, 0, 0}
     judgment = { text = "", alpha = 0, scale = 1 }
     bgmStarted = false
     endTimer = 0
+    finalResults = nil
     if bgm then bgm:stop() end
 end
 
@@ -97,9 +112,14 @@ function startGame(filename)
             return
         end
 
-        chart = decodedChart
+        loadedChart = decodedChart
+        chart = { notes = {} }
+        for _, note in ipairs(loadedChart.notes) do
+            table.insert(chart.notes, note)
+        end
         bpm = currentSongInfo.bpm
-        totalPossibleNotes = #chart.notes
+        totalPossibleNotes = #loadedChart.notes
+        currentSongOffsetMs = currentSongInfo.offset or 0
     else
         love.filesystem.unmount(archivePath)
         return
@@ -119,6 +139,26 @@ function returnToMenu()
     resetGame()
     Menu.load()
     gameState = "menu"
+end
+
+local function gradeFromAccuracy(accuracy)
+    if accuracy >= 99 then return "S" end
+    if accuracy >= 95 then return "A" end
+    if accuracy >= 90 then return "B" end
+    if accuracy >= 80 then return "C" end
+    return "D"
+end
+
+local function showResults()
+    local weightedHitScore = (judgments.marvelous * 1.0) + (judgments.perfect * 0.95) + (judgments.great * 0.75) + (judgments.good * 0.5)
+    local accuracy = totalPossibleNotes > 0 and (weightedHitScore / totalPossibleNotes) * 100 or 0
+    finalResults = {
+        score = score,
+        maxCombo = maxCombo,
+        accuracy = accuracy,
+        grade = gradeFromAccuracy(accuracy)
+    }
+    gameState = "results"
 end
 
 function importLRGFile(path)
@@ -174,13 +214,14 @@ function hitLane(lane)
         local n = activeNotes[i]
 
         if n.dir == lane and not n.hit then
-            local diff = math.abs(n.y - endY)
-
-            if diff < 100 then
+            local noteHitTimeMs = (n.beat * 60 / bpm) * 1000
+            local currentTimeMs = (songTime * 1000) + globalOffsetMs + currentSongOffsetMs
+            local diffMs = math.abs(currentTimeMs - noteHitTimeMs)
+            if diffMs <= timingWindows.good then
                 n.hit = true
                 hitFound = true
 
-                processHit(diff, lane)
+                processHit(diffMs, lane)
 
                 table.remove(activeNotes, i)
                 break
@@ -190,6 +231,7 @@ function hitLane(lane)
 
     if not hitFound then
         combo = 0
+        judgments.miss = judgments.miss + 1
         showJudgment("MISS", {1, 0.2, 0.2})
     end
 end
@@ -198,6 +240,14 @@ function love.keypressed(key)
     if gameState == "menu" then
         if key == "escape" then
             love.event.quit()
+        end
+        return
+    end
+    if gameState == "results" then
+        if key == "return" or key == "space" then
+            returnToMenu()
+        elseif key == "r" then
+            startGame(currentSongInfo.filename)
         end
         return
     end
@@ -214,7 +264,7 @@ function love.keypressed(key)
     end
 end
 
-function processHit(diff, lane)
+function processHit(diffMs, lane)
     hits = hits + 1
     notesFinished = notesFinished + 1
     combo = combo + 1
@@ -222,14 +272,21 @@ function processHit(diff, lane)
 
     table.insert(hitParticles, { x = xPositions[lane], y = endY, radius = 25, alpha = 1 })
 
-    if diff < 25 then
+    if diffMs <= timingWindows.marvelous then
+        score = score + 1200
+        judgments.marvelous = judgments.marvelous + 1
+        showJudgment("MARVELOUS", {1, 0.6, 1})
+    elseif diffMs <= timingWindows.perfect then
         score = score + 1000
+        judgments.perfect = judgments.perfect + 1
         showJudgment("PERFECT", {1, 0.8, 0})
-    elseif diff < 55 then
+    elseif diffMs <= timingWindows.great then
         score = score + 500
+        judgments.great = judgments.great + 1
         showJudgment("GREAT", {0.2, 1, 0.2})
     else
         score = score + 200
+        judgments.good = judgments.good + 1
         showJudgment("GOOD", {0.2, 0.6, 1})
     end
 end
@@ -244,6 +301,8 @@ end
 function love.mousepressed(x, y, button)
     if gameState == "menu" then
         Menu.mousepressed(x, y, button, startGame)
+    elseif gameState == "results" and button == 1 then
+        returnToMenu()
     end
 end
 
@@ -278,6 +337,9 @@ function love.update(dt)
         Menu.update(dt)
         return
     end
+    if gameState == "results" then
+        return
+    end
 
     -- GAME LOGIC
     if not bgmStarted then
@@ -297,7 +359,7 @@ function love.update(dt)
                 endTimer = endTimer + dt
 
                 if endTimer > 1.5 then
-                    returnToMenu()
+                    showResults()
                 end
             end
         end
@@ -331,6 +393,7 @@ beatFlash = math.max(0, beatFlash - dt * 2.5)
             notesFinished = notesFinished + 1
             table.remove(activeNotes, i)
             combo = 0
+            judgments.miss = judgments.miss + 1
             showJudgment("MISS", {1, 0.2, 0.2})
         end
     end
@@ -357,6 +420,21 @@ end
 function love.draw()
     if gameState == "menu" then
         Menu.draw()
+        return
+    end
+    if gameState == "results" then
+        local sw, sh = love.graphics.getDimensions()
+        love.graphics.setColor(0.05, 0.03, 0.09)
+        love.graphics.rectangle("fill", 0, 0, sw, sh)
+        love.graphics.setColor(1, 0.5, 0.8)
+        love.graphics.printf("RESULTS", 0, 80, sw, "center")
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("Score: " .. finalResults.score, 0, 160, sw, "center")
+        love.graphics.printf(string.format("Accuracy: %.2f%%", finalResults.accuracy), 0, 200, sw, "center")
+        love.graphics.printf("Max Combo: " .. finalResults.maxCombo, 0, 240, sw, "center")
+        love.graphics.printf("Grade: " .. finalResults.grade, 0, 280, sw, "center")
+        love.graphics.printf(string.format("Marvelous %d | Perfect %d | Great %d | Good %d | Miss %d", judgments.marvelous, judgments.perfect, judgments.great, judgments.good, judgments.miss), 0, 340, sw, "center")
+        love.graphics.printf("Press R to Retry, Enter/Space to Continue", 0, 420, sw, "center")
         return
     end
 
