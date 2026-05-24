@@ -140,34 +140,44 @@ end
 function Menu.mousepressed(x, y, button, startGameCallback)
     local sw, sh = love.graphics.getDimensions()
     local rightPanelX = sw / 2
+    local itemHeight = 70 -- Mantener la misma altura que usas en el Menu.draw
 
-    -- IMPORT BUTTON
-if love.system.getOS() == "Android" then
-    if x > importButton.x and x < importButton.x + importButton.w and
-       y > importButton.y and y < importButton.y + importButton.h then
+    -- IMPORT BUTTON (Para Android)
+    if love.system.getOS() == "Android" then
+        if x > importButton.x and x < importButton.x + importButton.w and
+           y > importButton.y and y < importButton.y + importButton.h then
 
-        -- Opens Android file picker area
-        love.system.openURL("file:///storage/emulated/0/Download/")
-        return
+            Menu.importMessage = "Abre el archivo .lrg desde el explorador nativo de Android"
+            Menu.importMessageTimer = 4
+            return
+        end
     end
-end
 
     if button == 1 then
+        -- === CLICK EN EL PANEL DERECHO (LISTA DE CANCIONES) ===
         if x > rightPanelX then
-            if Menu.hoverIndex > 0 then
-                -- Double click a song to play, or select it if not selected
-                if Menu.selectedIndex == Menu.hoverIndex then
-                    startGameCallback(Menu.songs[Menu.selectedIndex].filename)
+            -- Calculamos el índice real basándonos en la posición Y del mouse y el scroll
+            local calculatedIndex = math.floor((y - Menu.scroll) / itemHeight) + 1
+            
+            -- Verificar que el índice esté dentro del rango de canciones existentes
+            if calculatedIndex >= 1 and calculatedIndex <= #Menu.songs then
+                if Menu.selectedIndex == calculatedIndex then
+                    -- DOBLE CLICK: El usuario presiona la canción que ya estaba seleccionada. 
+                    -- FIX: Pasamos el objeto de canción completo con sus rutas extraídas
+                    startGameCallback(Menu.songs[Menu.selectedIndex])
                 else
-                    Menu.selectedIndex = Menu.hoverIndex
+                    -- PRIMER CLICK: Solo selecciona la canción de la lista
+                    Menu.selectedIndex = calculatedIndex
                 end
             end
+            
+        -- === CLICK EN EL PANEL IZQUIERDO (BOTÓN JUGAR GRANDE) ===
         else
-            -- Clicked the big "PLAY" Button on the left
             local btnX, btnY, btnW, btnH = 50, sh - 120, sw/2 - 100, 60
             if x > btnX and x < btnX + btnW and y > btnY and y < btnY + btnH then
-                if #Menu.songs > 0 then
-                    startGameCallback(Menu.songs[Menu.selectedIndex].filename)
+                if #Menu.songs > 0 and Menu.songs[Menu.selectedIndex] then
+                    -- FIX: Pasamos el objeto de canción completo al presionar el botón de PLAY
+                    startGameCallback(Menu.songs[Menu.selectedIndex])
                 end
             end
         end
