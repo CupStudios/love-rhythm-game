@@ -72,8 +72,9 @@ function startGame(filename)
     -- Load the chosen package
     local archivePath = "songs/" .. filename
     
-    -- FIX ANDROID: Forzar la ruta absoluta para el montaje
-    local fullOSPath = love.filesystem.getSaveDirectory() .. "/" .. archivePath
+    -- FIX ANDROID: Apuntar a la ruta absoluta de la carpeta externa de desarrollo
+    local fullOSPath = love.filesystem.getSource() .. "/" .. archivePath
+    
     local success = love.filesystem.mount(fullOSPath, "loaded_song")
     if not success then 
         print("Error: No se pudo montar " .. fullOSPath)
