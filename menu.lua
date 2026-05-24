@@ -20,61 +20,61 @@ Menu.importMessageTimer = 0
 function Menu.load()
     Menu.songs = {}
     
-    -- 1. Forzar que busque en la carpeta física de desarrollo actual
-    -- En tu caso será: /storage/emulated/0/Android/data/org.love2d.android/games/lovegame
-    local sourceDir = love.filesystem.getSource() 
-    
-    -- Creamos la carpeta de canciones ahí mismo si no existe
+    -- Asegurar que existan las carpetas necesarias en el almacenamiento seguro
     love.filesystem.createDirectory("songs")
+    love.filesystem.createDirectory("extracted_songs")
     
-    -- 2. Obtener los archivos de la carpeta "songs" del proyecto
+    -- Listar los archivos .lrg que pusiste en la carpeta songs
     local files = love.filesystem.getDirectoryItems("songs")
     
     for _, file in ipairs(files) do
         if file:lower():match("%.lrg$") then
             local filepath = "songs/" .. file
-            local mountPoint = "mount_" .. file:gsub("%W", "")
+            -- Crear un nombre de carpeta único para extraer la canción
+            local folderName = file:gsub("%W", "")
+            local targetFolder = "extracted_songs/" .. folderName
             
-            -- FIX ANDROID: Combinamos la ruta real del juego con la de la canción
-            local fullOSPath = sourceDir .. "/" .. filepath
+            love.filesystem.createDirectory(targetFolder)
             
-            -- Intentamos montar usando la ruta absoluta del almacenamiento interno
-            if love.filesystem.mount(fullOSPath, mountPoint) then
-                -- 3. Buscar manifest.json (Root o Subcarpeta)
-                local manifestPath = nil
-                local topLevelItems = love.filesystem.getDirectoryItems(mountPoint)
+            -- ¡Truco maestro!: Montamos el .lrg temporalmente en una ruta de lectura
+            local tempMount = "temp_" .. folderName
+            if love.filesystem.mount(filepath, tempMount) then
                 
-                for _, item in ipairs(topLevelItems) do
-                    if item == "manifest.json" then
-                        manifestPath = mountPoint .. "/manifest.json"
-                        break
-                    elseif love.filesystem.getInfo(mountPoint .. "/" .. item .. "/manifest.json") then
-                        manifestPath = mountPoint .. "/" .. item .. "/manifest.json"
-                        break
+                -- Copiar los archivos internos del .lrg a la carpeta real extraída
+                local insideItems = love.filesystem.getDirectoryItems(tempMount)
+                
+                -- Si los archivos están envueltos en una subcarpeta interna dentro del zip
+                local sourceSubfolder = ""
+                if #insideItems == 1 and love.filesystem.getInfo(tempMount .. "/" .. insideItems[1]).type == "directory" then
+                    sourceSubfolder = insideItems[1] .. "/"
+                    insideItems = love.filesystem.getDirectoryItems(tempMount .. "/" .. insideItems[1])
+                end
+                
+                -- Extraer de verdad cada archivo (manifest, audio, chart)
+                for _, item in ipairs(insideItems) do
+                    local fileData = love.filesystem.read(tempMount .. "/" .. sourceSubfolder .. item)
+                    if fileData then
+                        love.filesystem.write(targetFolder .. "/" .. item, fileData)
                     end
                 end
                 
-                if manifestPath then
+                -- Ya no necesitamos el montaje temporal, lo desmontamos
+                love.filesystem.unmount(filepath)
+                
+                -- Ahora leemos el manifest desde la carpeta ya extraída físicamente
+                local manifestPath = targetFolder .. "/manifest.json"
+                if love.filesystem.getInfo(manifestPath) then
                     local manifestData = love.filesystem.read(manifestPath)
                     if manifestData then
                         local ok, decoded = pcall(json.decode, json, manifestData)
                         if ok and decoded then
+                            -- Guardamos los datos clave para cuando el juego los necesite
                             decoded.filename = file
-                            decoded.mountPoint = mountPoint
-                            
-                            -- Guardar prefijo si está dentro de una subcarpeta
-                            if manifestPath ~= mountPoint .. "/manifest.json" then
-                                decoded.folderPrefix = topLevelItems[1] .. "/"
-                            else
-                                decoded.folderPrefix = ""
-                            end
-                            
+                            decoded.folderPath = targetFolder -- Guardamos la ruta física real
                             table.insert(Menu.songs, decoded)
                         end
                     end
                 end
-            else
-                print("Error crítico: No se pudo montar " .. fullOSPath)
             end
         end
     end
