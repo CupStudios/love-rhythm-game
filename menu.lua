@@ -17,6 +17,37 @@ local importButton = {
 Menu.importMessage = ""
 Menu.importMessageTimer = 0
 
+local androidImportPaths = {
+    "/storage/emulated/0/Download",
+    "/storage/emulated/0/Documents",
+    "/storage/emulated/0/Android/data/org.love2d.android/files/save/songs",
+    "/storage/emulated/0/Android/data/org.love2d.android/lovegame/songs"
+}
+
+local function copyFileFromAbsolutePath(path, destination)
+    local file = io.open(path, "rb")
+    if not file then
+        return false
+    end
+
+    local data = file:read("*all")
+    file:close()
+
+    if not data or #data == 0 then
+        return false
+    end
+
+    return love.filesystem.write(destination, data)
+end
+
+local function getSongDisplayValue(song, key, fallback)
+    local value = song and song[key]
+    if value == nil or value == "" then
+        return fallback
+    end
+    return tostring(value)
+end
+
 function Menu.load()
     Menu.songs = {}
     
@@ -93,20 +124,11 @@ function Menu.importLRG(path)
         return false
     end
 
-    local file = io.open(path, "rb")
-
-    if not file then
+    if not copyFileFromAbsolutePath(path, "songs/" .. filename) then
         Menu.importMessage = "Cannot open file"
         Menu.importMessageTimer = 3
         return false
     end
-
-    local data = file:read("*all")
-    file:close()
-
-    love.filesystem.createDirectory("songs")
-
-    love.filesystem.write("songs/" .. filename, data)
 
     Menu.importMessage = "Imported: " .. filename
     Menu.importMessageTimer = 3
@@ -114,6 +136,39 @@ function Menu.importLRG(path)
     Menu.load()
 
     return true
+end
+
+function Menu.importFromAndroidFolders()
+    local importedCount = 0
+    love.filesystem.createDirectory("songs")
+
+    for _, folder in ipairs(androidImportPaths) do
+        local command = string.format('ls -1 "%s" 2>/dev/null', folder)
+        local pipe = io.popen(command)
+        if pipe then
+            for entry in pipe:lines() do
+                if entry:lower():match("%.lrg$") then
+                    local sourcePath = folder .. "/" .. entry
+                    local destination = "songs/" .. entry
+                    if not love.filesystem.getInfo(destination) and copyFileFromAbsolutePath(sourcePath, destination) then
+                        importedCount = importedCount + 1
+                    end
+                end
+            end
+            pipe:close()
+        end
+    end
+
+    if importedCount > 0 then
+        Menu.importMessage = string.format("Imported %d song(s) from Android folders", importedCount)
+        Menu.importMessageTimer = 4
+        Menu.load()
+        return true
+    end
+
+    Menu.importMessage = "No .lrg files found. Put songs in Download or Android/data/.../songs"
+    Menu.importMessageTimer = 5
+    return false
 end
 
 function Menu.update(dt)
@@ -147,7 +202,7 @@ function Menu.mousepressed(x, y, button, startGameCallback)
         if x > importButton.x and x < importButton.x + importButton.w and
            y > importButton.y and y < importButton.y + importButton.h then
 
-            Menu.importMessage = "Abre el archivo .lrg desde el explorador nativo de Android"
+            Menu.importFromAndroidFolders()
             Menu.importMessageTimer = 4
             return
         end
@@ -223,9 +278,9 @@ function Menu.draw()
     love.graphics.pop()
 
     love.graphics.setColor(0.7, 0.7, 1)
-    love.graphics.print("Artist: " .. selectedSong.artist, 50, 120)
-    love.graphics.print("BPM: " .. (selectedSong.bpm or "Unknown"), 50, 160)
-    love.graphics.print("File: " .. selectedSong.filename, 50, 200)
+    love.graphics.print("Artist: " .. getSongDisplayValue(selectedSong, "artist", "Unknown Artist"), 50, 120)
+    love.graphics.print("BPM: " .. getSongDisplayValue(selectedSong, "bpm", "Unknown"), 50, 160)
+    love.graphics.print("File: " .. getSongDisplayValue(selectedSong, "filename", "Unknown"), 50, 200)
 
     -- Play Button
     local btnX, btnY, btnW, btnH = 50, sh - 120, sw/2 - 100, 60
