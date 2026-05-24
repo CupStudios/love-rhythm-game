@@ -62,10 +62,10 @@ function resetGame()
     if bgm then bgm:stop() end
 end
 
-function startGame(filename)
+function startGame(songData)
     resetGame()
 
-    if not songData then
+    if not songData or type(songData) ~= "table" then
         return
     end
     
@@ -112,7 +112,7 @@ function startGame(filename)
         for _, note in ipairs(loadedChart.notes) do
             table.insert(chart.notes, note)
         end
-        bpm = currentSongInfo.bpm
+        bpm = tonumber(currentSongInfo.bpm) or 120
         totalPossibleNotes = #loadedChart.notes
         currentSongOffsetMs = currentSongInfo.offset or 0
     else
@@ -126,9 +126,6 @@ function startGame(filename)
 end
 
 function returnToMenu()
-    if currentSongInfo.filename then
-        love.filesystem.unmount("songs/" .. currentSongInfo.filename)
-    end
     currentSongInfo = {}
     resetGame()
     Menu.load()
@@ -241,7 +238,7 @@ function love.keypressed(key)
         if key == "return" or key == "space" then
             returnToMenu()
         elseif key == "r" then
-            startGame(currentSongInfo.filename)
+            startGame(currentSongInfo)
         end
         return
     end
