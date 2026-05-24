@@ -65,39 +65,28 @@ end
 function startGame(filename)
     resetGame()
 
-    if not filename then
+    if not songData then
         return
     end
     
-    -- Load the chosen package
-    local archivePath = "songs/" .. filename
-    
-    -- FIX ANDROID: Apuntar a la ruta absoluta de la carpeta externa de desarrollo
-    local fullOSPath = love.filesystem.getSource() .. "/" .. archivePath
-    
-    local success = love.filesystem.mount(fullOSPath, "loaded_song")
-    if not success then 
-        print("Error: No se pudo montar " .. fullOSPath)
-        return 
-    end
+    -- Recuperamos la ruta de la carpeta física donde extrajimos todo
+    local folder = songData.folderPath
 
-    local manifestData = love.filesystem.read("loaded_song/manifest.json")
-    if not manifestData then
-        love.filesystem.unmount(archivePath)
-        return
-    end
+    -- Leer el manifest directamente desde el almacenamiento físico seguro
+    local manifestData = love.filesystem.read(folder .. "/manifest.json")
+    if not manifestData then return end
 
     local okManifest, decodedManifest = pcall(json.decode, json, manifestData)
-    if not okManifest or not decodedManifest then
-        love.filesystem.unmount(archivePath)
-        return
-    end
+    if not okManifest or not decodedManifest then return end
 
     currentSongInfo = decodedManifest
-    currentSongInfo.filename = filename
+    currentSongInfo.filename = songData.filename
+    currentSongInfo.folderPath = folder
 
+    -- Cargar el archivo de audio usando la ruta física
     if currentSongInfo.audio then
-        local okAudio, source = pcall(love.audio.newSource, "loaded_song/" .. currentSongInfo.audio, "stream")
+        local audioPath = folder .. "/" .. currentSongInfo.audio
+        local okAudio, source = pcall(love.audio.newSource, audioPath, "stream")
         if okAudio and source then
             bgm = source
             bgm:setVolume(0.8)
@@ -107,15 +96,14 @@ function startGame(filename)
     end
 
     if not currentSongInfo.difficulties or not currentSongInfo.difficulties.hard then
-        love.filesystem.unmount(archivePath)
         return
     end
 
-    local chartData = love.filesystem.read("loaded_song/" .. currentSongInfo.difficulties.hard)
+    -- Cargar el chart (las notas) usando la ruta física
+    local chartData = love.filesystem.read(folder .. "/" .. currentSongInfo.difficulties.hard)
     if chartData then
         local okChart, decodedChart = pcall(json.decode, json, chartData)
         if not okChart or type(decodedChart) ~= "table" or type(decodedChart.notes) ~= "table" then
-            love.filesystem.unmount(archivePath)
             return
         end
 
@@ -128,7 +116,6 @@ function startGame(filename)
         totalPossibleNotes = #loadedChart.notes
         currentSongOffsetMs = currentSongInfo.offset or 0
     else
-        love.filesystem.unmount(archivePath)
         return
     end
 
