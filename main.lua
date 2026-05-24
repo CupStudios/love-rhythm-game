@@ -71,8 +71,14 @@ function startGame(filename)
     
     -- Load the chosen package
     local archivePath = "songs/" .. filename
-    local success = love.filesystem.mount(archivePath, "loaded_song")
-    if not success then return end
+    
+    -- FIX ANDROID: Forzar la ruta absoluta para el montaje
+    local fullOSPath = love.filesystem.getSaveDirectory() .. "/" .. archivePath
+    local success = love.filesystem.mount(fullOSPath, "loaded_song")
+    if not success then 
+        print("Error: No se pudo montar " .. fullOSPath)
+        return 
+    end
 
     local manifestData = love.filesystem.read("loaded_song/manifest.json")
     if not manifestData then
