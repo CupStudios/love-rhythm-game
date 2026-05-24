@@ -29,10 +29,13 @@ function Menu.load()
     for _, file in ipairs(files) do
         if file:lower():match("%.lrg$") then
             local filepath = "songs/" .. file
-            -- Generate a safe, unique mount point
+            -- Generar un punto de montaje seguro
             local mountPoint = "mount_" .. file:gsub("%W", "")
             
-            if love.filesystem.mount(filepath, mountPoint) then
+            -- FIX ANDROID: Obtener la ruta absoluta real del sistema
+            local fullOSPath = love.filesystem.getSaveDirectory() .. "/" .. filepath
+            
+            if love.filesystem.mount(fullOSPath, mountPoint) then
                 -- 3. Look for manifest.json (Root OR Subfolder)
                 local manifestPath = nil
                 local topLevelItems = love.filesystem.getDirectoryItems(mountPoint)
