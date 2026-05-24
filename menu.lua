@@ -20,23 +20,27 @@ Menu.importMessageTimer = 0
 function Menu.load()
     Menu.songs = {}
     
-    -- 1. Ensure the directory exists
+    -- 1. Forzar que busque en la carpeta física de desarrollo actual
+    -- En tu caso será: /storage/emulated/0/Android/data/org.love2d.android/games/lovegame
+    local sourceDir = love.filesystem.getSource() 
+    
+    -- Creamos la carpeta de canciones ahí mismo si no existe
     love.filesystem.createDirectory("songs")
     
-    -- 2. Get all items in the folder
+    -- 2. Obtener los archivos de la carpeta "songs" del proyecto
     local files = love.filesystem.getDirectoryItems("songs")
     
     for _, file in ipairs(files) do
         if file:lower():match("%.lrg$") then
             local filepath = "songs/" .. file
-            -- Generar un punto de montaje seguro
             local mountPoint = "mount_" .. file:gsub("%W", "")
             
-            -- FIX ANDROID: Obtener la ruta absoluta real del sistema
-            local fullOSPath = love.filesystem.getSaveDirectory() .. "/" .. filepath
+            -- FIX ANDROID: Combinamos la ruta real del juego con la de la canción
+            local fullOSPath = sourceDir .. "/" .. filepath
             
+            -- Intentamos montar usando la ruta absoluta del almacenamiento interno
             if love.filesystem.mount(fullOSPath, mountPoint) then
-                -- 3. Look for manifest.json (Root OR Subfolder)
+                -- 3. Buscar manifest.json (Root o Subcarpeta)
                 local manifestPath = nil
                 local topLevelItems = love.filesystem.getDirectoryItems(mountPoint)
                 
@@ -46,46 +50,33 @@ function Menu.load()
                         break
                     elseif love.filesystem.getInfo(mountPoint .. "/" .. item .. "/manifest.json") then
                         manifestPath = mountPoint .. "/" .. item .. "/manifest.json"
-                        -- Store the subfolder prefix so we can load assets correctly later
-                        -- (You'll need this to find the .ogg inside that subfolder)
-                        mountPoint = mountPoint .. "/" .. item 
                         break
                     end
                 end
-
-                -- 4. Process the manifest if found
+                
                 if manifestPath then
                     local manifestData = love.filesystem.read(manifestPath)
-                    local success, info = pcall(json.decode, json, manifestData)
-                    
-                    if success and info then
-                        info.filename = file
-                        info.artist = info.artist or "Unknown Artist"
-                        info.title = info.title or file:gsub("%.lrg$", "")
-                        -- Store the internal path so the game knows where to look for audio/chart
-                        info.mountPath = mountPoint 
-                        
-                        table.insert(Menu.songs, info)
-                        print("Loaded: " .. info.title)
-                    else
-                        print("Error: JSON Decode failed in " .. file)
+                    if manifestData then
+                        local ok, decoded = pcall(json.decode, json, manifestData)
+                        if ok and decoded then
+                            decoded.filename = file
+                            decoded.mountPoint = mountPoint
+                            
+                            -- Guardar prefijo si está dentro de una subcarpeta
+                            if manifestPath ~= mountPoint .. "/manifest.json" then
+                                decoded.folderPrefix = topLevelItems[1] .. "/"
+                            else
+                                decoded.folderPrefix = ""
+                            end
+                            
+                            table.insert(Menu.songs, decoded)
+                        end
                     end
-                else
-                    print("Error: No manifest.json found in " .. file)
                 end
-                
-                -- 5. Unmount to keep things clean
-                love.filesystem.unmount(filepath)
             else
-                print("Error: Failed to mount " .. file)
+                print("Error crítico: No se pudo montar " .. fullOSPath)
             end
         end
-    end
-
-    if #Menu.songs == 0 then
-        Menu.selectedIndex = 0
-    else
-        Menu.selectedIndex = math.max(1, math.min(Menu.selectedIndex, #Menu.songs))
     end
 end
 
