@@ -264,4 +264,25 @@ function love.draw()
         love.graphics.setColor(0,0,0,0.65); love.graphics.rectangle("fill",0,0,sw,sh)
         for _,rect in pairs(pauseButtons) do love.graphics.setColor(0.2,0.5,0.7,1); love.graphics.rectangle("fill",rect.x,rect.y,rect.w,rect.h,6); love.graphics.setColor(1,1,1); love.graphics.printf(rect.text,rect.x,rect.y+22,rect.w,"center") end
     end
+
+    if gameState == "pause" then
+        love.graphics.setColor(0, 0, 0, 0.65)
+        love.graphics.rectangle("fill", 0, 0, sw, sh)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("PAUSA", 0, sh / 2 - 180, sw, "center")
+
+        local colors = {
+            continue = {0.2, 0.6, 0.3},
+            restart = {0.2, 0.4, 0.8},
+            exit = {0.8, 0.3, 0.3}
+        }
+
+        for key, rect in pairs(pauseButtons) do
+            local c = colors[key]
+            love.graphics.setColor(c[1], c[2], c[3], 1)
+            love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 6)
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.printf(rect.text, rect.x, rect.y + 22, rect.w, "center")
+        end
+    end
 end
