@@ -78,7 +78,10 @@ end
 loadSettings()
 
 local SONGS_API = settings.repositoryUrl .. "songs.json"
-local FILES_API_BASE = settings.repositoryUrl .. "files/"
+local function GetFilesApiBase()
+    -- Siempre toma el valor actual desde settings (que ya se actualizó al cargar)
+    return settings.repositoryUrl .. "files/"
+end
 local downloadThread
 
 local function copyFileFromAbsolutePath(path, destination)
@@ -230,7 +233,7 @@ function Menu.downloadOnlineSong(song)
     if not song or not song.file then return end
     ensureDownloadThread()
 
-    local url = FILES_API_BASE .. song.file
+    local url = GetFilesApiBase() .. song.file
     love.thread.getChannel("download_request"):push(url .. "|" .. song.file)
     Menu.onlineStatus = "Descargando " .. song.file .. "..."
     Menu.onlineStatusTimer = 6
