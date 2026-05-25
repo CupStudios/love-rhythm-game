@@ -43,8 +43,8 @@ local androidImportPaths = {
     "/storage/emulated/0/Android/data/org.love2d.android/lovegame/songs"
 }
 
-local SONGS_API = "https://easy-planes-remain.loca.lt/"
-local FILES_API_BASE = "https://easy-planes-remain.loca.lt/"
+local SONGS_API = "https://easy-planes-remain.loca.lt/songs.json"
+local FILES_API_BASE = "https://easy-planes-remain.loca.lt/files/"
 local downloadThread
 
 local function copyFileFromAbsolutePath(path, destination)
