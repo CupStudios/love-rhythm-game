@@ -355,8 +355,11 @@ function Menu.mousepressed(x, y, button, startGameCallback)
                 if x > sw - 190 and x < sw - 30 then
                     Menu.downloadOnlineSong(song)
                 end
+                return
             end
         end
+
+        Menu.state = "local"
         return
     end
 
@@ -399,6 +402,15 @@ function Menu.mousepressed(x, y, button, startGameCallback)
 end
 
 function Menu.keypressed(key)
+    if key == "escape" then
+        if Menu.state == "online" or Menu.state == "settings" then
+            Menu.state = "local"
+            Menu.settingsInputActive = false
+            return true
+        end
+        return false
+    end
+
     if Menu.state ~= "settings" or not Menu.settingsInputActive then return false end
     if key == "backspace" then
         local byteoffset = utf8.offset(Menu.settings.repositoryUrl, -1)
