@@ -84,6 +84,15 @@ local function pointInRect(x, y, r)
     return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h
 end
 
+local function resolvePointerToPixels(x, y)
+    local sw, sh = love.graphics.getDimensions()
+    local px, py = x, y
+    if px >= 0 and px <= 1 and py >= 0 and py <= 1 then
+        px, py = px * sw, py * sh
+    end
+    return px, py, sw, sh
+end
+
 local function pauseGame()
     if gameState ~= "play" then return end
     if bgm and bgm:isPlaying() then bgm:pause() end
@@ -303,48 +312,50 @@ function love.textinput(t)
 end
 
 function love.mousepressed(x, y, button)
+    local px, py = resolvePointerToPixels(x, y)
     if gameState == "menu" then
-        Menu.mousepressed(x, y, button, startGame)
+        Menu.mousepressed(px, py, button, startGame)
     elseif gameState == "results" and button == 1 then
         returnToMenu()
     elseif gameState == "pause" and button == 1 then
-        if pointInRect(x, y, pauseButtons.continue) then
+        layoutPauseButtons()
+        if pointInRect(px, py, pauseButtons.continue) then
             resumeGame()
-        elseif pointInRect(x, y, pauseButtons.restart) then
+        elseif pointInRect(px, py, pauseButtons.restart) then
             startGame(currentSongInfo)
-        elseif pointInRect(x, y, pauseButtons.exit) then
+        elseif pointInRect(px, py, pauseButtons.exit) then
             returnToMenu()
         end
     end
 end
 
 function love.touchpressed(_, x, y)
-    local sw, sh = love.graphics.getDimensions()
-    x, y = x * sw, y * sh
+    local px, py, sw = resolvePointerToPixels(x, y)
 
     if gameState == "pause" then
-        if pointInRect(x, y, pauseButtons.continue) then
+        layoutPauseButtons()
+        if pointInRect(px, py, pauseButtons.continue) then
             resumeGame()
-        elseif pointInRect(x, y, pauseButtons.restart) then
+        elseif pointInRect(px, py, pauseButtons.restart) then
             startGame(currentSongInfo)
-        elseif pointInRect(x, y, pauseButtons.exit) then
+        elseif pointInRect(px, py, pauseButtons.exit) then
             returnToMenu()
         end
         return
     end
 
     if gameState == "play" then
-        if x < 120 and y < 80 then
+        if px < 120 and py < 80 then
             pauseGame()
             return
         end
 
-        local lane = math.floor(x / (sw / 4)) + 1
+        local lane = math.floor(px / (sw / 4)) + 1
         if lane >= 1 and lane <= 4 then
             hitLane(lane)
         end
     elseif gameState == "menu" then
-        Menu.mousepressed(x, y, 1, startGame)
+        Menu.mousepressed(px, py, 1, startGame)
     end
 end
 
