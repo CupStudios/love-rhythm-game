@@ -366,6 +366,7 @@ function Menu.mousepressed(x, y, button, startGameCallback)
             end
         end
 
+        Menu.state = "local"
         return
     end
 
