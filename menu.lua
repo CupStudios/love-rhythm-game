@@ -336,7 +336,14 @@ function Menu.update(dt)
     end
 end
 
+local lastClickTime = 0
+local CLICK_THRESHOLD = 0.2 -- segundos
+
 function Menu.mousepressed(x, y, button, startGameCallback)
+    -- 1. ANTI-REBOTE (Debounce): Ignorar si han pasado menos de 0.2s
+    local currentTime = love.timer.getTime()
+    if (currentTime - lastClickTime) < CLICK_THRESHOLD then return end
+    lastClickTime = currentTime
     if button ~= 1 then return end
 
     local sw, sh = VIRTUAL_WIDTH, VIRTUAL_HEIGHT
