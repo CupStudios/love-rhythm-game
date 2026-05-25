@@ -30,6 +30,9 @@ local VIRTUAL_HEIGHT = 720
 
 local function getVirtualMousePosition()
     local mouseX, mouseY = love.mouse.getPosition()
+    if getVirtualCoords then
+        return getVirtualCoords(mouseX, mouseY)
+    end
     local scaleX = love.graphics.getWidth() / VIRTUAL_WIDTH
     local scaleY = love.graphics.getHeight() / VIRTUAL_HEIGHT
     return mouseX / scaleX, mouseY / scaleY

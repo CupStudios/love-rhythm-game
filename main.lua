@@ -1,12 +1,18 @@
 local json = require "json"
 local Menu = require "menu"
 
-local VIRTUAL_WIDTH = 1280
-local VIRTUAL_HEIGHT = 720
+VIRTUAL_WIDTH = 1280
+VIRTUAL_HEIGHT = 720
 
-local function getVirtualScale()
+function getVirtualCoords(x, y)
     local sw, sh = love.graphics.getDimensions()
-    return sw / VIRTUAL_WIDTH, sh / VIRTUAL_HEIGHT
+    local scale = math.min(sw / VIRTUAL_WIDTH, sh / VIRTUAL_HEIGHT)
+    local offsetX = (sw - VIRTUAL_WIDTH * scale) / 2
+    local offsetY = (sh - VIRTUAL_HEIGHT * scale) / 2
+
+    local virtualX = (x - offsetX) / scale
+    local virtualY = (y - offsetY) / scale
+    return virtualX, virtualY, scale, offsetX, offsetY
 end
 
 local settings = {
@@ -320,9 +326,7 @@ end
 
 function love.mousepressed(x, y, button)
     local px, py = resolvePointerToPixels(x, y)
-    local scaleX, scaleY = getVirtualScale()
-    px = px / scaleX
-    py = py / scaleY
+    px, py = getVirtualCoords(px, py)
     if gameState == "menu" then
         Menu.mousepressed(px, py, button, startGame)
     elseif gameState == "results" and button == 1 then
@@ -341,10 +345,8 @@ end
 
 function love.touchpressed(_, x, y)
     local px, py, sw = resolvePointerToPixels(x, y)
-    local scaleX, scaleY = getVirtualScale()
-    px = px / scaleX
-    py = py / scaleY
-    sw = sw / scaleX
+    px, py = getVirtualCoords(px, py)
+    sw = VIRTUAL_WIDTH
 
     if gameState == "pause" then
         layoutPauseButtons()
@@ -470,9 +472,10 @@ function love.update(dt)
 end
 
 function love.draw()
-    local scaleX, scaleY = getVirtualScale()
+    local _, _, scale, offsetX, offsetY = getVirtualCoords(0, 0)
     love.graphics.push()
-    love.graphics.scale(scaleX, scaleY)
+    love.graphics.translate(offsetX, offsetY)
+    love.graphics.scale(scale)
 
     local sw, sh = VIRTUAL_WIDTH, VIRTUAL_HEIGHT
 
