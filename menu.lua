@@ -1,6 +1,7 @@
 local json = require "json"
 local http = require("socket.http")
 local ltn12 = require("ltn12")
+local utf8 = require("utf8")
 
 local Menu = {
     songs = {},
@@ -421,9 +422,10 @@ function Menu.keypressed(key)
 
     if Menu.state ~= "settings" or not Menu.settingsInputActive then return false end
     if key == "backspace" then
-        local byteoffset = utf8.offset(Menu.settings.repositoryUrl, -1)
+        local repositoryUrl = tostring(Menu.settings.repositoryUrl or "")
+        local byteoffset = utf8.offset(repositoryUrl, -1)
         if byteoffset then
-            Menu.settings.repositoryUrl = string.sub(Menu.settings.repositoryUrl, 1, byteoffset - 1)
+            Menu.settings.repositoryUrl = string.sub(repositoryUrl, 1, byteoffset - 1)
         end
         return true
     elseif key == "return" or key == "kpenter" then
