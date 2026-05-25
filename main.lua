@@ -1,7 +1,7 @@
 local json = require "json"
 local Menu = require "menu"
 
-local gameState = "menu" -- Can be "menu", "play", or "results"
+local gameState = "menu" -- "menu", "play", "pause", "results"
 
 local loadedChart = { notes = {} }
 local chart = { notes = {} }
@@ -12,16 +12,13 @@ local spawnAheadBeats = 4
 local travelDistance = 700
 local startY, endY = 0, 0
 local bgmStarted = false
-local endTimer = 0 -- To handle waiting a few seconds after the song ends
+local endTimer = 0
 
--- Scoring and Stats
 local score, combo, maxCombo, hits, totalPossibleNotes = 0, 0, 0, 0, 0
 local judgments = { marvelous = 0, perfect = 0, great = 0, good = 0, miss = 0 }
 local finalResults = nil
-
 local notesFinished = 0
 
--- Eye Candy Variables
 local judgment = { text = "", alpha = 0, scale = 1 }
 local hitParticles = {}
 local receptorFlashes = {0, 0, 0, 0}
@@ -29,22 +26,44 @@ local xPositions = {}
 
 local bgm
 local currentSongInfo = {}
-
 local keys = { d = 1, f = 2, j = 3, k = 4, l = 4 }
 
 local beatFlash = 0
 local lastBeat = -1
 local globalOffsetMs = 0
 local currentSongOffsetMs = 0
-local timingWindows = {
-    marvelous = 18,
-    perfect = 35,
-    great = 60,
-    good = 90
+local timingWindows = { marvelous = 18, perfect = 35, great = 60, good = 90 }
+
+local pauseButtons = {
+    continue = { x = 0, y = 0, w = 320, h = 60, text = "Continuar" },
+    restart = { x = 0, y = 0, w = 320, h = 60, text = "Reiniciar" },
+    exit = { x = 0, y = 0, w = 320, h = 60, text = "Salir" }
 }
 
-local importedMessage = ""
-local importedMessageTimer = 0
+local function layoutPauseButtons()
+    local sw, sh = love.graphics.getDimensions()
+    local centerX = (sw - pauseButtons.continue.w) / 2
+    local startYPos = (sh / 2) - 110
+    pauseButtons.continue.x, pauseButtons.continue.y = centerX, startYPos
+    pauseButtons.restart.x, pauseButtons.restart.y = centerX, startYPos + 80
+    pauseButtons.exit.x, pauseButtons.exit.y = centerX, startYPos + 160
+end
+
+local function pointInRect(x, y, r)
+    return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h
+end
+
+local function pauseGame()
+    if gameState ~= "play" then return end
+    if bgm and bgm:isPlaying() then bgm:pause() end
+    gameState = "pause"
+end
+
+local function resumeGame()
+    if gameState ~= "pause" then return end
+    if bgm and not bgm:isPlaying() then bgm:play() end
+    gameState = "play"
+end
 
 function resetGame()
     score, combo, maxCombo, hits = 0, 0, 0, 0
@@ -62,17 +81,11 @@ function resetGame()
     if bgm then bgm:stop() end
 end
 
-function startGame(filename)
+function startGame(songData)
     resetGame()
+    if not songData or type(songData) ~= "table" then return end
 
-    if not songData then
-        return
-    end
-    
-    -- Recuperamos la ruta de la carpeta física donde extrajimos todo
     local folder = songData.folderPath
-
-    -- Leer el manifest directamente desde el almacenamiento físico seguro
     local manifestData = love.filesystem.read(folder .. "/manifest.json")
     if not manifestData then return end
 
@@ -83,7 +96,6 @@ function startGame(filename)
     currentSongInfo.filename = songData.filename
     currentSongInfo.folderPath = folder
 
-    -- Cargar el archivo de audio usando la ruta física
     if currentSongInfo.audio then
         local audioPath = folder .. "/" .. currentSongInfo.audio
         local okAudio, source = pcall(love.audio.newSource, audioPath, "stream")
@@ -95,40 +107,27 @@ function startGame(filename)
         end
     end
 
-    if not currentSongInfo.difficulties or not currentSongInfo.difficulties.hard then
-        return
-    end
+    if not currentSongInfo.difficulties or not currentSongInfo.difficulties.hard then return end
 
-    -- Cargar el chart (las notas) usando la ruta física
     local chartData = love.filesystem.read(folder .. "/" .. currentSongInfo.difficulties.hard)
-    if chartData then
-        local okChart, decodedChart = pcall(json.decode, json, chartData)
-        if not okChart or type(decodedChart) ~= "table" or type(decodedChart.notes) ~= "table" then
-            return
-        end
+    if not chartData then return end
 
-        loadedChart = decodedChart
-        chart = { notes = {} }
-        for _, note in ipairs(loadedChart.notes) do
-            table.insert(chart.notes, note)
-        end
-        bpm = currentSongInfo.bpm
-        totalPossibleNotes = #loadedChart.notes
-        currentSongOffsetMs = currentSongInfo.offset or 0
-    else
-        return
-    end
+    local okChart, decodedChart = pcall(json.decode, json, chartData)
+    if not okChart or type(decodedChart) ~= "table" or type(decodedChart.notes) ~= "table" then return end
+
+    loadedChart = decodedChart
+    chart = { notes = {} }
+    for _, note in ipairs(loadedChart.notes) do table.insert(chart.notes, note) end
+    bpm = tonumber(currentSongInfo.bpm) or 120
+    totalPossibleNotes = #loadedChart.notes
+    currentSongOffsetMs = currentSongInfo.offset or 0
 
     local delaySeconds = (spawnAheadBeats * 60) / bpm
-    songTime = -delaySeconds 
-    
+    songTime = -delaySeconds
     gameState = "play"
 end
 
 function returnToMenu()
-    if currentSongInfo.filename then
-        love.filesystem.unmount("songs/" .. currentSongInfo.filename)
-    end
     currentSongInfo = {}
     resetGame()
     Menu.load()
@@ -146,67 +145,31 @@ end
 local function showResults()
     local weightedHitScore = (judgments.marvelous * 1.0) + (judgments.perfect * 0.95) + (judgments.great * 0.75) + (judgments.good * 0.5)
     local accuracy = totalPossibleNotes > 0 and (weightedHitScore / totalPossibleNotes) * 100 or 0
-    finalResults = {
-        score = score,
-        maxCombo = maxCombo,
-        accuracy = accuracy,
-        grade = gradeFromAccuracy(accuracy)
-    }
+    finalResults = { score = score, maxCombo = maxCombo, accuracy = accuracy, grade = gradeFromAccuracy(accuracy) }
     gameState = "results"
-end
-
-function importLRGFile(path)
-    if not path then
-        return
-    end
-
-    local filename = path:match("([^/]+%.lrg)$")
-
-    if not filename then
-        importedMessage = "Invalid file!"
-        importedMessageTimer = 3
-        return
-    end
-
-    local data = love.filesystem.read(path)
-
-    if not data then
-        importedMessage = "Failed to read file!"
-        importedMessageTimer = 3
-        return
-    end
-
-    love.filesystem.createDirectory("songs")
-    love.filesystem.write("songs/" .. filename, data)
-
-    importedMessage = "Imported: " .. filename
-    importedMessageTimer = 3
 end
 
 function love.load()
     love.filesystem.createDirectory("songs")
-
     love.window.setTitle("Rhythm Game")
     love.window.setMode(1000, 700, {resizable = true})
-    
+
     local sw, sh = love.graphics.getDimensions()
     startY = sh/2 - 500
     endY = sh/2 + 200
     xPositions = {sw/2 - 125, sw/2 - 25, sw/2 + 75, sw/2 + 175}
 
     love.filesystem.mount(love.filesystem.getSource(), "base")
-    
     Menu.load()
+    layoutPauseButtons()
 end
 
 function hitLane(lane)
     receptorFlashes[lane] = 1
-
     local hitFound = false
 
     for i = 1, #activeNotes do
         local n = activeNotes[i]
-
         if n.dir == lane and not n.hit then
             local noteHitTimeMs = (n.beat * 60 / bpm) * 1000
             local currentTimeMs = (songTime * 1000) + globalOffsetMs + currentSongOffsetMs
@@ -214,9 +177,7 @@ function hitLane(lane)
             if diffMs <= timingWindows.good then
                 n.hit = true
                 hitFound = true
-
                 processHit(diffMs, lane)
-
                 table.remove(activeNotes, i)
                 break
             end
@@ -232,30 +193,35 @@ end
 
 function love.keypressed(key)
     if gameState == "menu" then
-        if key == "escape" then
-            love.event.quit()
-        end
+        if key == "escape" then love.event.quit() end
         return
     end
+
     if gameState == "results" then
         if key == "return" or key == "space" then
             returnToMenu()
         elseif key == "r" then
-            startGame(currentSongInfo.filename)
+            startGame(currentSongInfo)
+        end
+        return
+    end
+
+    if gameState == "pause" then
+        if key == "escape" then
+            resumeGame()
+        elseif key == "r" then
+            startGame(currentSongInfo)
         end
         return
     end
 
     if key == "escape" then
-        returnToMenu()
+        pauseGame()
         return
     end
 
     local lane = keys[key]
-
-    if lane then
-        hitLane(lane)
-    end
+    if lane then hitLane(lane) end
 end
 
 function processHit(diffMs, lane)
@@ -297,33 +263,53 @@ function love.mousepressed(x, y, button)
         Menu.mousepressed(x, y, button, startGame)
     elseif gameState == "results" and button == 1 then
         returnToMenu()
+    elseif gameState == "pause" and button == 1 then
+        if pointInRect(x, y, pauseButtons.continue) then
+            resumeGame()
+        elseif pointInRect(x, y, pauseButtons.restart) then
+            startGame(currentSongInfo)
+        elseif pointInRect(x, y, pauseButtons.exit) then
+            returnToMenu()
+        end
     end
 end
 
-function love.touchpressed(id, x, y, dx, dy, pressure)
-    if gameState ~= "play" then
+function love.touchpressed(_, x, y)
+    local sw, sh = love.graphics.getDimensions()
+    x, y = x * sw, y * sh
+
+    if gameState == "pause" then
+        if pointInRect(x, y, pauseButtons.continue) then
+            resumeGame()
+        elseif pointInRect(x, y, pauseButtons.restart) then
+            startGame(currentSongInfo)
+        elseif pointInRect(x, y, pauseButtons.exit) then
+            returnToMenu()
+        end
         return
     end
 
-    local sw, sh = love.graphics.getDimensions()
+    if gameState == "play" then
+        if x < 120 and y < 80 then
+            pauseGame()
+            return
+        end
 
-    -- Convert normalized coords to screen coords
-    x = x * sw
-    y = y * sh
-
-    local laneWidth = sw / 4
-
-    local lane = math.floor(x / laneWidth) + 1
-
-    if lane >= 1 and lane <= 4 then
-        hitLane(lane)
+        local lane = math.floor(x / (sw / 4)) + 1
+        if lane >= 1 and lane <= 4 then
+            hitLane(lane)
+        end
+    elseif gameState == "menu" then
+        Menu.mousepressed(x, y, 1, startGame)
     end
 end
 
 function love.wheelmoved(x, y)
-    if gameState == "menu" then
-        Menu.wheelmoved(x, y)
-    end
+    if gameState == "menu" then Menu.wheelmoved(x, y) end
+end
+
+function love.resize()
+    layoutPauseButtons()
 end
 
 function love.update(dt)
@@ -331,11 +317,10 @@ function love.update(dt)
         Menu.update(dt)
         return
     end
-    if gameState == "results" then
+    if gameState == "results" or gameState == "pause" then
         return
     end
 
-    -- GAME LOGIC
     if not bgmStarted then
         songTime = songTime + dt
         if songTime >= 0 then
@@ -347,29 +332,20 @@ function love.update(dt)
             songTime = bgm:tell()
         else
             songTime = songTime + dt
-            
-            -- Song completion
             if notesFinished >= totalPossibleNotes and #activeNotes == 0 then
                 endTimer = endTimer + dt
-
-                if endTimer > 1.5 then
-                    showResults()
-                end
+                if endTimer > 1.5 then showResults() end
             end
         end
     end
-    
+
     local currentBeat = songTime * (bpm / 60)
-
-    -- Beat flash
     local beatInt = math.floor(currentBeat)
-
     if beatInt > lastBeat then
         lastBeat = beatInt
         beatFlash = 0.35
     end
-
-beatFlash = math.max(0, beatFlash - dt * 2.5)
+    beatFlash = math.max(0, beatFlash - dt * 2.5)
 
     for i = #chart.notes, 1, -1 do
         local n = chart.notes[i]
@@ -405,9 +381,7 @@ beatFlash = math.max(0, beatFlash - dt * 2.5)
     end
 
     for i = 1, 4 do
-        if receptorFlashes[i] > 0 then
-            receptorFlashes[i] = math.max(0, receptorFlashes[i] - dt * 4)
-        end
+        if receptorFlashes[i] > 0 then receptorFlashes[i] = math.max(0, receptorFlashes[i] - dt * 4) end
     end
 end
 
@@ -416,8 +390,10 @@ function love.draw()
         Menu.draw()
         return
     end
+
+    local sw, sh = love.graphics.getDimensions()
+
     if gameState == "results" then
-        local sw, sh = love.graphics.getDimensions()
         love.graphics.setColor(0.05, 0.03, 0.09)
         love.graphics.rectangle("fill", 0, 0, sw, sh)
         love.graphics.setColor(1, 0.5, 0.8)
@@ -432,8 +408,6 @@ function love.draw()
         return
     end
 
-    -- GAME RENDERING
-    local sw, sh = love.graphics.getDimensions()
     local bg = 0.05 + beatFlash
     love.graphics.setColor(bg, bg, bg + 0.03)
     love.graphics.rectangle("fill", 0, 0, sw, sh)
@@ -441,7 +415,6 @@ function love.draw()
     love.graphics.setColor(1, 1, 1)
     love.graphics.print("Score: " .. score, 20, 20)
     love.graphics.print("Combo: " .. combo, 20, 40)
-    
     local notesProcessed = totalPossibleNotes - #chart.notes
     local acc = notesProcessed > 0 and (hits / notesProcessed) * 100 or 0
     love.graphics.print(string.format("Accuracy: %.2f%%", acc), 20, 60)
@@ -456,9 +429,7 @@ function love.draw()
     end
 
     love.graphics.setColor(1, 0.4, 0.4)
-    for _, n in ipairs(activeNotes) do
-        love.graphics.circle("fill", xPositions[n.dir], n.y, 25)
-    end
+    for _, n in ipairs(activeNotes) do love.graphics.circle("fill", xPositions[n.dir], n.y, 25) end
 
     love.graphics.setLineWidth(2)
     for _, p in ipairs(hitParticles) do
@@ -467,19 +438,20 @@ function love.draw()
     end
     love.graphics.setLineWidth(1)
 
-    -- Mobile touch areas
     if love.system.getOS() == "Android" or love.system.getOS() == "iOS" then
-       local laneWidth = sw / 4
-
-    for i = 1, 4 do
-        local x = (i - 1) * laneWidth
-
-        love.graphics.setColor(1, 1, 1, 0.05)
-        love.graphics.rectangle("fill", x, sh - 200, laneWidth, 200)
-
-        love.graphics.setColor(1, 1, 1, 0.15)
-        love.graphics.rectangle("line", x, sh - 200, laneWidth, 200)
+        local laneWidth = sw / 4
+        for i = 1, 4 do
+            local x = (i - 1) * laneWidth
+            love.graphics.setColor(1, 1, 1, 0.05)
+            love.graphics.rectangle("fill", x, sh - 200, laneWidth, 200)
+            love.graphics.setColor(1, 1, 1, 0.15)
+            love.graphics.rectangle("line", x, sh - 200, laneWidth, 200)
         end
+
+        love.graphics.setColor(0.8, 0.3, 0.3, 0.9)
+        love.graphics.rectangle("fill", 20, 20, 90, 45, 6)
+        love.graphics.setColor(1,1,1)
+        love.graphics.printf("PAUSA", 20, 34, 90, "center")
     end
 
     if judgment.alpha > 0 then
@@ -490,5 +462,26 @@ function love.draw()
         love.graphics.scale(judgment.scale, judgment.scale)
         love.graphics.printf(judgment.text, -100, -10, 200, "center")
         love.graphics.pop()
+    end
+
+    if gameState == "pause" then
+        love.graphics.setColor(0, 0, 0, 0.65)
+        love.graphics.rectangle("fill", 0, 0, sw, sh)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("PAUSA", 0, sh / 2 - 180, sw, "center")
+
+        local colors = {
+            continue = {0.2, 0.6, 0.3},
+            restart = {0.2, 0.4, 0.8},
+            exit = {0.8, 0.3, 0.3}
+        }
+
+        for key, rect in pairs(pauseButtons) do
+            local c = colors[key]
+            love.graphics.setColor(c[1], c[2], c[3], 1)
+            love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 6)
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.printf(rect.text, rect.x, rect.y + 22, rect.w, "center")
+        end
     end
 end
