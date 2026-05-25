@@ -43,8 +43,29 @@ local androidImportPaths = {
     "/storage/emulated/0/Android/data/org.love2d.android/lovegame/songs"
 }
 
-local SONGS_API = "https://easy-planes-remain.loca.lt/songs.json"
-local FILES_API_BASE = "https://easy-planes-remain.loca.lt/files/"
+local settings = {
+    repositoryUrl = "https://easy-planes-remain.loca.lt/"
+}
+
+local function loadSettings()
+    local data = love.filesystem.read("settings.json")
+    if not data then return end
+
+    local ok, decoded = pcall(json.decode, json, data)
+    if not ok or type(decoded) ~= "table" then return end
+
+    if type(decoded.repositoryUrl) == "string" and decoded.repositoryUrl ~= "" then
+        local url = decoded.repositoryUrl
+        -- Asegurar que siempre termine en /
+        if url:sub(-1) ~= "/" then url = url .. "/" end
+        settings.repositoryUrl = url
+    end
+end
+
+loadSettings()
+
+local SONGS_API = settings.repositoryUrl .. "songs.json"
+local FILES_API_BASE = settings.repositoryUrl .. "files/"
 local downloadThread
 
 local function copyFileFromAbsolutePath(path, destination)
