@@ -148,16 +148,39 @@ function Menu.fetchOnlineSongs()
     Menu.onlineStatus = "Cargando lista online..."
     Menu.onlineStatusTimer = 4
 
+    local baseUrl = SONGS_API
+    if Menu.settings and type(Menu.settings.repositoryUrl) == "string" and Menu.settings.repositoryUrl ~= "" then
+        local cleanedBase = Menu.settings.repositoryUrl:gsub("%s+", "")
+        if cleanedBase:match("^http://") then
+            baseUrl = cleanedBase .. "/songs.json"
+        end
+    end
+
+    local url = baseUrl:gsub("%s+", "")
+    if not url:match("^http://") then
+        Menu.onlineStatus = "Error URL inválida: debe iniciar con http://"
+        Menu.onlineStatusTimer = 5
+        return false
+    end
+
     local chunks = {}
-    local _, code = http.request({ url = SONGS_API, sink = ltn12.sink.table(chunks) })
+    local okRequest, _, code = pcall(http.request, { url = url, sink = ltn12.sink.table(chunks) })
+    if not okRequest then
+        Menu.onlineStatus = "Error de red: fallo en resolución de nombre"
+        Menu.onlineStatusTimer = 5
+        return false
+    end
+
     if code ~= 200 then
         Menu.onlineStatus = "Error cargando songs.json (HTTP " .. tostring(code) .. ")"
+        Menu.onlineStatusTimer = 5
         return false
     end
 
     local songs = parseOnlineSongsJson(table.concat(chunks))
     if not songs then
         Menu.onlineStatus = "JSON inválido del servidor"
+        Menu.onlineStatusTimer = 5
         return false
     end
 

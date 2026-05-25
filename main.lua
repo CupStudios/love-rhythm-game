@@ -319,8 +319,7 @@ function love.mousepressed(x, y, button)
 end
 
 function love.touchpressed(_, x, y)
-    local sw, sh = love.graphics.getDimensions()
-    x, y = x * sw, y * sh
+    local sw = love.graphics.getWidth()
 
     if gameState == "pause" then
         if pointInRect(x, y, pauseButtons.continue) then
