@@ -2,7 +2,7 @@ local json = require "json"
 local Menu = require "menu"
 
 local settings = {
-    repositoryUrl = "http://192.168.100.8:8080",
+    repositoryUrl = "https://easy-planes-remain.loca.lt/",
     eyeCandy = true,
     framerateCap = 60
 }
