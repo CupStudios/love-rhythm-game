@@ -25,6 +25,19 @@ local onlineButton = { x = 50, y = 0, w = 0, h = 60 }
 local settingsButton = { x = 50, y = 0, w = 0, h = 60 }
 local backButton = { x = 50, y = 0, w = 220, h = 60 }
 
+local VIRTUAL_WIDTH = 1280
+local VIRTUAL_HEIGHT = 720
+
+local function getVirtualMousePosition()
+    local mouseX, mouseY = love.mouse.getPosition()
+    if getVirtualCoords then
+        return getVirtualCoords(mouseX, mouseY)
+    end
+    local scaleX = love.graphics.getWidth() / VIRTUAL_WIDTH
+    local scaleY = love.graphics.getHeight() / VIRTUAL_HEIGHT
+    return mouseX / scaleX, mouseY / scaleY
+end
+
 local settingsUi = {
     panel = { x = 0, y = 0, w = 0, h = 0 },
     eyeCandy = { x = 0, y = 0, w = 0, h = 50 },
@@ -300,9 +313,9 @@ function Menu.update(dt)
         end
     end
 
-    local sw = love.graphics.getWidth()
+    local sw = VIRTUAL_WIDTH
     local itemHeight = 70
-    local mouseX, mouseY = love.mouse.getPosition()
+    local mouseX, mouseY = getVirtualMousePosition()
 
     if Menu.state == "local" then
         Menu.hoverIndex = 0
@@ -326,7 +339,7 @@ end
 function Menu.mousepressed(x, y, button, startGameCallback)
     if button ~= 1 then return end
 
-    local sw, sh = love.graphics.getDimensions()
+    local sw, sh = VIRTUAL_WIDTH, VIRTUAL_HEIGHT
     local rightPanelX = sw / 2
     local itemHeight = 70
 
