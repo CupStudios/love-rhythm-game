@@ -13,12 +13,24 @@ local Menu = {
     onlineHoverIndex = 0,
     onlineScroll = 0,
     onlineStatus = "",
-    onlineStatusTimer = 0
+    onlineStatusTimer = 0,
+    settings = nil,
+    saveSettings = nil,
+    settingsInputActive = false
 }
 
 local importButton = { x = 50, y = 0, w = 0, h = 60 }
 local onlineButton = { x = 50, y = 0, w = 0, h = 60 }
+local settingsButton = { x = 50, y = 0, w = 0, h = 60 }
 local backButton = { x = 50, y = 0, w = 220, h = 60 }
+
+local settingsUi = {
+    panel = { x = 0, y = 0, w = 0, h = 0 },
+    eyeCandy = { x = 0, y = 0, w = 0, h = 50 },
+    framerateCap = { x = 0, y = 0, w = 0, h = 50 },
+    repositoryUrl = { x = 0, y = 0, w = 0, h = 50 },
+    saveAndExit = { x = 0, y = 0, w = 0, h = 60 }
+}
 
 Menu.importMessage = ""
 Menu.importMessageTimer = 0
@@ -73,6 +85,11 @@ local function parseOnlineSongsJson(body)
     end
 
     return songs
+end
+
+function Menu.setSettingsHandlers(settingsRef, saveFn)
+    Menu.settings = settingsRef
+    Menu.saveSettings = saveFn
 end
 
 function Menu.load()
@@ -215,39 +232,6 @@ function Menu.importFromAndroidFolders()
     return false
 end
 
-function Menu.importFromAndroidFolders()
-    local importedCount = 0
-    love.filesystem.createDirectory("songs")
-
-    for _, folder in ipairs(androidImportPaths) do
-        local command = string.format('ls -1 "%s" 2>/dev/null', folder)
-        local pipe = io.popen(command)
-        if pipe then
-            for entry in pipe:lines() do
-                if entry:lower():match("%.lrg$") then
-                    local sourcePath = folder .. "/" .. entry
-                    local destination = "songs/" .. entry
-                    if not love.filesystem.getInfo(destination) and copyFileFromAbsolutePath(sourcePath, destination) then
-                        importedCount = importedCount + 1
-                    end
-                end
-            end
-            pipe:close()
-        end
-    end
-
-    if importedCount > 0 then
-        Menu.importMessage = string.format("Imported %d song(s) from Android folders", importedCount)
-        Menu.importMessageTimer = 4
-        Menu.load()
-        return true
-    end
-
-    Menu.importMessage = "No .lrg files found. Put songs in Download or Android/data/.../songs"
-    Menu.importMessageTimer = 5
-    return false
-end
-
 function Menu.update(dt)
     if Menu.importMessageTimer > 0 then Menu.importMessageTimer = Menu.importMessageTimer - dt end
     if Menu.onlineStatusTimer > 0 then Menu.onlineStatusTimer = Menu.onlineStatusTimer - dt end
@@ -283,7 +267,7 @@ function Menu.update(dt)
                 Menu.hoverIndex = index
             end
         end
-    else
+    elseif Menu.state == "online" then
         Menu.onlineHoverIndex = 0
         if mouseX > sw / 2 then
             local index = math.floor((mouseY - Menu.onlineScroll) / itemHeight) + 1
@@ -300,6 +284,39 @@ function Menu.mousepressed(x, y, button, startGameCallback)
     local sw, sh = love.graphics.getDimensions()
     local rightPanelX = sw / 2
     local itemHeight = 70
+
+    if Menu.state == "settings" then
+        if x > settingsUi.eyeCandy.x and x < settingsUi.eyeCandy.x + settingsUi.eyeCandy.w and y > settingsUi.eyeCandy.y and y < settingsUi.eyeCandy.y + settingsUi.eyeCandy.h then
+            Menu.settings.eyeCandy = not Menu.settings.eyeCandy
+            return
+        end
+
+        if x > settingsUi.framerateCap.x and x < settingsUi.framerateCap.x + settingsUi.framerateCap.w and y > settingsUi.framerateCap.y and y < settingsUi.framerateCap.y + settingsUi.framerateCap.h then
+            local caps = {30, 60, 120, 0}
+            local currentIdx = 1
+            for i, cap in ipairs(caps) do
+                if Menu.settings.framerateCap == cap then
+                    currentIdx = i
+                    break
+                end
+            end
+            Menu.settings.framerateCap = caps[(currentIdx % #caps) + 1]
+            return
+        end
+
+        Menu.settingsInputActive = x > settingsUi.repositoryUrl.x and x < settingsUi.repositoryUrl.x + settingsUi.repositoryUrl.w and y > settingsUi.repositoryUrl.y and y < settingsUi.repositoryUrl.y + settingsUi.repositoryUrl.h
+
+        if x > settingsUi.saveAndExit.x and x < settingsUi.saveAndExit.x + settingsUi.saveAndExit.w and y > settingsUi.saveAndExit.y and y < settingsUi.saveAndExit.y + settingsUi.saveAndExit.h then
+            if Menu.saveSettings then
+                Menu.saveSettings()
+            end
+            Menu.settingsInputActive = false
+            Menu.state = "local"
+            return
+        end
+
+        return
+    end
 
     if Menu.state == "online" then
         if x > backButton.x and x < backButton.x + backButton.w and y > backButton.y and y < backButton.y + backButton.h then
@@ -333,6 +350,12 @@ function Menu.mousepressed(x, y, button, startGameCallback)
         return
     end
 
+    if x > settingsButton.x and x < settingsButton.x + settingsButton.w and y > settingsButton.y and y < settingsButton.y + settingsButton.h then
+        Menu.state = "settings"
+        Menu.settingsInputActive = false
+        return
+    end
+
     if x > rightPanelX then
         local calculatedIndex = math.floor((y - Menu.scroll) / itemHeight) + 1
         if calculatedIndex >= 1 and calculatedIndex <= #Menu.songs then
@@ -352,13 +375,31 @@ function Menu.mousepressed(x, y, button, startGameCallback)
     end
 end
 
+function Menu.keypressed(key)
+    if Menu.state ~= "settings" or not Menu.settingsInputActive then return false end
+    if key == "backspace" then
+        local byteoffset = utf8.offset(Menu.settings.repositoryUrl, -1)
+        if byteoffset then
+            Menu.settings.repositoryUrl = string.sub(Menu.settings.repositoryUrl, 1, byteoffset - 1)
+        end
+        return true
+    end
+    return false
+end
+
+function Menu.textinput(t)
+    if Menu.state == "settings" and Menu.settingsInputActive then
+        Menu.settings.repositoryUrl = Menu.settings.repositoryUrl .. t
+    end
+end
+
 function Menu.wheelmoved(_, y)
     local _, sh = love.graphics.getDimensions()
     local itemHeight = 70
     if Menu.state == "local" then
         local minScroll = math.min(0, sh - (#Menu.songs * itemHeight))
         Menu.scroll = math.max(minScroll, math.min(0, Menu.scroll + y * 40))
-    else
+    elseif Menu.state == "online" then
         local minScroll = math.min(0, sh - (#Menu.onlineSongs * itemHeight))
         Menu.onlineScroll = math.max(minScroll, math.min(0, Menu.onlineScroll + y * 40))
     end
@@ -370,6 +411,45 @@ function Menu.draw()
     love.graphics.rectangle("fill", 0, 0, sw, sh)
     love.graphics.setColor(1, 1, 1, 0.2)
     love.graphics.line(sw/2, 0, sw/2, sh)
+
+    if Menu.state == "settings" then
+        local panelX, panelY, panelW, panelH = 50, 80, sw - 100, sh - 160
+        settingsUi.panel.x, settingsUi.panel.y, settingsUi.panel.w, settingsUi.panel.h = panelX, panelY, panelW, panelH
+        settingsUi.eyeCandy.x, settingsUi.eyeCandy.y, settingsUi.eyeCandy.w = panelX + 40, panelY + 70, panelW - 80
+        settingsUi.framerateCap.x, settingsUi.framerateCap.y, settingsUi.framerateCap.w = panelX + 40, panelY + 150, panelW - 80
+        settingsUi.repositoryUrl.x, settingsUi.repositoryUrl.y, settingsUi.repositoryUrl.w = panelX + 40, panelY + 230, panelW - 80
+        settingsUi.saveAndExit.x, settingsUi.saveAndExit.y, settingsUi.saveAndExit.w = panelX + 40, panelY + panelH - 100, panelW - 80
+
+        love.graphics.setColor(0.1, 0.1, 0.14, 0.95)
+        love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 8)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("Ajustes", panelX, panelY + 20, panelW, "center")
+
+        love.graphics.setColor(0.18, 0.18, 0.24)
+        love.graphics.rectangle("fill", settingsUi.eyeCandy.x, settingsUi.eyeCandy.y, settingsUi.eyeCandy.w, settingsUi.eyeCandy.h, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("Eye Candy: " .. (Menu.settings.eyeCandy and "ON" or "OFF"), settingsUi.eyeCandy.x + 16, settingsUi.eyeCandy.y + 16, settingsUi.eyeCandy.w - 32, "left")
+
+        love.graphics.setColor(0.18, 0.18, 0.24)
+        love.graphics.rectangle("fill", settingsUi.framerateCap.x, settingsUi.framerateCap.y, settingsUi.framerateCap.w, settingsUi.framerateCap.h, 5)
+        love.graphics.setColor(1, 1, 1)
+        local capText = Menu.settings.framerateCap == 0 and "Ilimitado" or tostring(Menu.settings.framerateCap)
+        love.graphics.printf("Framerate Cap: " .. capText, settingsUi.framerateCap.x + 16, settingsUi.framerateCap.y + 16, settingsUi.framerateCap.w - 32, "left")
+
+        love.graphics.setColor(0.18, 0.18, 0.24)
+        love.graphics.rectangle("fill", settingsUi.repositoryUrl.x, settingsUi.repositoryUrl.y, settingsUi.repositoryUrl.w, settingsUi.repositoryUrl.h, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("URL del Repositorio: " .. Menu.settings.repositoryUrl, settingsUi.repositoryUrl.x + 16, settingsUi.repositoryUrl.y + 16, settingsUi.repositoryUrl.w - 32, "left")
+        if Menu.settingsInputActive then
+            love.graphics.rectangle("line", settingsUi.repositoryUrl.x, settingsUi.repositoryUrl.y, settingsUi.repositoryUrl.w, settingsUi.repositoryUrl.h, 5)
+        end
+
+        love.graphics.setColor(0.2, 0.6, 0.2)
+        love.graphics.rectangle("fill", settingsUi.saveAndExit.x, settingsUi.saveAndExit.y, settingsUi.saveAndExit.w, settingsUi.saveAndExit.h, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("Guardar y Salir", settingsUi.saveAndExit.x, settingsUi.saveAndExit.y + 23, settingsUi.saveAndExit.w, "center")
+        return
+    end
 
     if Menu.state == "online" then
         backButton.x = 50
@@ -437,6 +517,14 @@ function Menu.draw()
     love.graphics.rectangle("fill", onlineButton.x, onlineButton.y, onlineButton.w, onlineButton.h, 5)
     love.graphics.setColor(1,1,1)
     love.graphics.printf("ONLINE SONGS", onlineButton.x, onlineButton.y + 23, onlineButton.w, "center")
+
+    settingsButton.x = 50
+    settingsButton.y = sh - 330
+    settingsButton.w = sw/2 - 100
+    love.graphics.setColor(0.35, 0.35, 0.35)
+    love.graphics.rectangle("fill", settingsButton.x, settingsButton.y, settingsButton.w, settingsButton.h, 5)
+    love.graphics.setColor(1,1,1)
+    love.graphics.printf("AJUSTES", settingsButton.x, settingsButton.y + 23, settingsButton.w, "center")
 
     if love.system.getOS() == "Android" then
         importButton.x = 50
