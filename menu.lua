@@ -327,13 +327,20 @@ function Menu.mousepressed(x, y, button, startGameCallback)
             return
         end
 
+        local inputWasActive = Menu.settingsInputActive
         Menu.settingsInputActive = x > settingsUi.repositoryUrl.x and x < settingsUi.repositoryUrl.x + settingsUi.repositoryUrl.w and y > settingsUi.repositoryUrl.y and y < settingsUi.repositoryUrl.y + settingsUi.repositoryUrl.h
+        if Menu.settingsInputActive and not inputWasActive then
+            love.keyboard.setTextInput(true)
+        elseif not Menu.settingsInputActive and inputWasActive then
+            love.keyboard.setTextInput(false)
+        end
 
         if x > settingsUi.saveAndExit.x and x < settingsUi.saveAndExit.x + settingsUi.saveAndExit.w and y > settingsUi.saveAndExit.y and y < settingsUi.saveAndExit.y + settingsUi.saveAndExit.h then
             if Menu.saveSettings then
                 Menu.saveSettings()
             end
             Menu.settingsInputActive = false
+            love.keyboard.setTextInput(false)
             Menu.state = "local"
             return
         end
@@ -355,8 +362,11 @@ function Menu.mousepressed(x, y, button, startGameCallback)
                 if x > sw - 190 and x < sw - 30 then
                     Menu.downloadOnlineSong(song)
                 end
+                return
             end
         end
+
+        Menu.state = "local"
         return
     end
 
@@ -399,12 +409,26 @@ function Menu.mousepressed(x, y, button, startGameCallback)
 end
 
 function Menu.keypressed(key)
+    if key == "escape" then
+        if Menu.state == "online" or Menu.state == "settings" then
+            Menu.state = "local"
+            Menu.settingsInputActive = false
+            love.keyboard.setTextInput(false)
+            return true
+        end
+        return false
+    end
+
     if Menu.state ~= "settings" or not Menu.settingsInputActive then return false end
     if key == "backspace" then
         local byteoffset = utf8.offset(Menu.settings.repositoryUrl, -1)
         if byteoffset then
             Menu.settings.repositoryUrl = string.sub(Menu.settings.repositoryUrl, 1, byteoffset - 1)
         end
+        return true
+    elseif key == "return" or key == "kpenter" then
+        Menu.settingsInputActive = false
+        love.keyboard.setTextInput(false)
         return true
     end
     return false
