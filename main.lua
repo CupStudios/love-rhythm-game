@@ -1,6 +1,37 @@
 local json = require "json"
 local Menu = require "menu"
 
+local settings = {
+    repositoryUrl = "http://192.168.1.X:3000",
+    eyeCandy = true,
+    framerateCap = 60
+}
+
+local function loadSettings()
+    local data = love.filesystem.read("settings.json")
+    if not data then return end
+
+    local ok, decoded = pcall(json.decode, json, data)
+    if not ok or type(decoded) ~= "table" then return end
+
+    if type(decoded.repositoryUrl) == "string" and decoded.repositoryUrl ~= "" then
+        settings.repositoryUrl = decoded.repositoryUrl
+    end
+    if type(decoded.eyeCandy) == "boolean" then
+        settings.eyeCandy = decoded.eyeCandy
+    end
+    if type(decoded.framerateCap) == "number" then
+        settings.framerateCap = decoded.framerateCap
+    end
+end
+
+local function saveSettings()
+    local payload = json.encode(json, settings)
+    if payload then
+        love.filesystem.write("settings.json", payload)
+    end
+end
+
 local gameState = "menu" -- "menu", "play", "pause", "results"
 
 local loadedChart = { notes = {} }
@@ -160,12 +191,16 @@ function love.load()
     xPositions = {sw/2 - 125, sw/2 - 25, sw/2 + 75, sw/2 + 175}
 
     love.filesystem.mount(love.filesystem.getSource(), "base")
+    loadSettings()
+    Menu.setSettingsHandlers(settings, saveSettings)
     Menu.load()
     layoutPauseButtons()
 end
 
 function hitLane(lane)
-    receptorFlashes[lane] = 1
+    if settings.eyeCandy then
+        receptorFlashes[lane] = 1
+    end
     local hitFound = false
 
     for i = 1, #activeNotes do
@@ -193,6 +228,7 @@ end
 
 function love.keypressed(key)
     if gameState == "menu" then
+        if Menu.keypressed and Menu.keypressed(key) then return end
         if key == "escape" then love.event.quit() end
         return
     end
@@ -230,7 +266,9 @@ function processHit(diffMs, lane)
     combo = combo + 1
     if combo > maxCombo then maxCombo = combo end
 
-    table.insert(hitParticles, { x = xPositions[lane], y = endY, radius = 25, alpha = 1 })
+    if settings.eyeCandy then
+        table.insert(hitParticles, { x = xPositions[lane], y = endY, radius = 25, alpha = 1 })
+    end
 
     if diffMs <= timingWindows.marvelous then
         score = score + 1200
@@ -256,6 +294,12 @@ function showJudgment(text, color)
     judgment.color = color
     judgment.alpha = 1
     judgment.scale = 1.5
+end
+
+function love.textinput(t)
+    if gameState == "menu" and Menu.textinput then
+        Menu.textinput(t)
+    end
 end
 
 function love.mousepressed(x, y, button)
@@ -343,7 +387,9 @@ function love.update(dt)
     local beatInt = math.floor(currentBeat)
     if beatInt > lastBeat then
         lastBeat = beatInt
-        beatFlash = 0.35
+        if settings.eyeCandy then
+            beatFlash = 0.35
+        end
     end
     beatFlash = math.max(0, beatFlash - dt * 2.5)
 
@@ -373,15 +419,25 @@ function love.update(dt)
         if judgment.scale > 1 then judgment.scale = judgment.scale - dt * 3 end
     end
 
-    for i = #hitParticles, 1, -1 do
-        local p = hitParticles[i]
-        p.radius = p.radius + 150 * dt
-        p.alpha = p.alpha - 3 * dt
-        if p.alpha <= 0 then table.remove(hitParticles, i) end
+    if settings.eyeCandy then
+        for i = #hitParticles, 1, -1 do
+            local p = hitParticles[i]
+            p.radius = p.radius + 150 * dt
+            p.alpha = p.alpha - 3 * dt
+            if p.alpha <= 0 then table.remove(hitParticles, i) end
+        end
+
+        for i = 1, 4 do
+            if receptorFlashes[i] > 0 then receptorFlashes[i] = math.max(0, receptorFlashes[i] - dt * 4) end
+        end
     end
 
-    for i = 1, 4 do
-        if receptorFlashes[i] > 0 then receptorFlashes[i] = math.max(0, receptorFlashes[i] - dt * 4) end
+    if settings.framerateCap > 0 then
+        local targetFrameTime = 1 / settings.framerateCap
+        local frameTime = love.timer.getDelta()
+        if frameTime < targetFrameTime then
+            love.timer.sleep(targetFrameTime - frameTime)
+        end
     end
 end
 
@@ -408,7 +464,7 @@ function love.draw()
         return
     end
 
-    local bg = 0.05 + beatFlash
+    local bg = settings.eyeCandy and (0.05 + beatFlash) or 0.05
     love.graphics.setColor(bg, bg, bg + 0.03)
     love.graphics.rectangle("fill", 0, 0, sw, sh)
 
@@ -422,7 +478,7 @@ function love.draw()
     for i, x in ipairs(xPositions) do
         love.graphics.setColor(1, 1, 1, 0.2)
         love.graphics.circle("line", x, endY, 25)
-        if receptorFlashes[i] > 0 then
+        if settings.eyeCandy and receptorFlashes[i] > 0 then
             love.graphics.setColor(1, 1, 1, receptorFlashes[i] * 0.5)
             love.graphics.circle("fill", x, endY, 25)
         end
@@ -431,12 +487,14 @@ function love.draw()
     love.graphics.setColor(1, 0.4, 0.4)
     for _, n in ipairs(activeNotes) do love.graphics.circle("fill", xPositions[n.dir], n.y, 25) end
 
-    love.graphics.setLineWidth(2)
-    for _, p in ipairs(hitParticles) do
-        love.graphics.setColor(1, 1, 1, p.alpha)
-        love.graphics.circle("line", p.x, p.y, p.radius)
+    if settings.eyeCandy then
+        love.graphics.setLineWidth(2)
+        for _, p in ipairs(hitParticles) do
+            love.graphics.setColor(1, 1, 1, p.alpha)
+            love.graphics.circle("line", p.x, p.y, p.radius)
+        end
+        love.graphics.setLineWidth(1)
     end
-    love.graphics.setLineWidth(1)
 
     if love.system.getOS() == "Android" or love.system.getOS() == "iOS" then
         local laneWidth = sw / 4
