@@ -1,6 +1,14 @@
 local json = require "json"
 local Menu = require "menu"
 
+local VIRTUAL_WIDTH = 1280
+local VIRTUAL_HEIGHT = 720
+
+local function getVirtualScale()
+    local sw, sh = love.graphics.getDimensions()
+    return sw / VIRTUAL_WIDTH, sh / VIRTUAL_HEIGHT
+end
+
 local settings = {
     repositoryUrl = "https://easy-planes-remain.loca.lt/",
     eyeCandy = true,
@@ -194,10 +202,9 @@ function love.load()
     love.window.setTitle("Rhythm Game")
     love.window.setMode(1000, 700, {resizable = true})
 
-    local sw, sh = love.graphics.getDimensions()
-    startY = sh/2 - 500
-    endY = sh/2 + 200
-    xPositions = {sw/2 - 125, sw/2 - 25, sw/2 + 75, sw/2 + 175}
+    startY = VIRTUAL_HEIGHT / 2 - 500
+    endY = VIRTUAL_HEIGHT / 2 + 200
+    xPositions = {VIRTUAL_WIDTH / 2 - 125, VIRTUAL_WIDTH / 2 - 25, VIRTUAL_WIDTH / 2 + 75, VIRTUAL_WIDTH / 2 + 175}
 
     love.filesystem.mount(love.filesystem.getSource(), "base")
     loadSettings()
@@ -313,6 +320,9 @@ end
 
 function love.mousepressed(x, y, button)
     local px, py = resolvePointerToPixels(x, y)
+    local scaleX, scaleY = getVirtualScale()
+    px = px / scaleX
+    py = py / scaleY
     if gameState == "menu" then
         Menu.mousepressed(px, py, button, startGame)
     elseif gameState == "results" and button == 1 then
@@ -331,6 +341,10 @@ end
 
 function love.touchpressed(_, x, y)
     local px, py, sw = resolvePointerToPixels(x, y)
+    local scaleX, scaleY = getVirtualScale()
+    px = px / scaleX
+    py = py / scaleY
+    sw = sw / scaleX
 
     if gameState == "pause" then
         layoutPauseButtons()
@@ -364,6 +378,9 @@ function love.wheelmoved(x, y)
 end
 
 function love.resize()
+    startY = (VIRTUAL_HEIGHT / 2) - 500
+    endY = (VIRTUAL_HEIGHT / 2) + 200
+    xPositions = {VIRTUAL_WIDTH / 2 - 125, VIRTUAL_WIDTH / 2 - 25, VIRTUAL_WIDTH / 2 + 75, VIRTUAL_WIDTH / 2 + 175}
     layoutPauseButtons()
 end
 
@@ -453,12 +470,17 @@ function love.update(dt)
 end
 
 function love.draw()
+    local scaleX, scaleY = getVirtualScale()
+    love.graphics.push()
+    love.graphics.scale(scaleX, scaleY)
+
+    local sw, sh = VIRTUAL_WIDTH, VIRTUAL_HEIGHT
+
     if gameState == "menu" then
         Menu.draw()
+        love.graphics.pop()
         return
     end
-
-    local sw, sh = love.graphics.getDimensions()
 
     if gameState == "results" then
         love.graphics.setColor(0.05, 0.03, 0.09)
@@ -472,6 +494,7 @@ function love.draw()
         love.graphics.printf("Grade: " .. finalResults.grade, 0, 280, sw, "center")
         love.graphics.printf(string.format("Marvelous %d | Perfect %d | Great %d | Good %d | Miss %d", judgments.marvelous, judgments.perfect, judgments.great, judgments.good, judgments.miss), 0, 340, sw, "center")
         love.graphics.printf("Press R to Retry, Enter/Space to Continue", 0, 420, sw, "center")
+        love.graphics.pop()
         return
     end
 
@@ -553,4 +576,6 @@ function love.draw()
             love.graphics.printf(rect.text, rect.x, rect.y + 22, rect.w, "center")
         end
     end
+
+    love.graphics.pop()
 end
