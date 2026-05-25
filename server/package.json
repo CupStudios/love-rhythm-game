@@ -1,0 +1,14 @@
+{
+  "name": "love-rhythm-server",
+  "version": "1.0.0",
+  "description": "Servidor de canciones .lrg para Love Rhythm Game",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "sqlite3": "^5.1.7"
+  }
+}
