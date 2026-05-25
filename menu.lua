@@ -63,7 +63,8 @@ local function settingsPath()
 end
 
 function Menu.saveSettings()
-    local ok = love.filesystem.write(settingsPath(), json.encode(Menu.settings))
+    local encoded = json:encode(Menu.settings)
+    local ok = love.filesystem.write(settingsPath(), encoded)
     if ok then
         Menu.onlineStatus = "Configuración guardada"
         Menu.onlineStatusTimer = 3
@@ -80,7 +81,9 @@ function Menu.loadSettings()
     if love.filesystem.getInfo(settingsPath()) then
         local data = love.filesystem.read(settingsPath())
         if data then
-            local ok, decoded = pcall(json.decode, json, data)
+            local ok, decoded = pcall(function()
+                return json:decode(data)
+            end)
             if ok and type(decoded) == "table" then
                 defaults.repositoryUrl = decoded.repositoryUrl or defaults.repositoryUrl
                 defaults.eyeCandy = decoded.eyeCandy ~= false
@@ -88,7 +91,7 @@ function Menu.loadSettings()
             end
         end
     else
-        love.filesystem.write(settingsPath(), json.encode(defaults))
+        love.filesystem.write(settingsPath(), json:encode(defaults))
     end
 
     Menu.settings = defaults
@@ -102,7 +105,9 @@ local function ensureDownloadThread()
 end
 
 local function parseOnlineSongsJson(body)
-    local ok, decoded = pcall(json.decode, json, body)
+    local ok, decoded = pcall(function()
+        return json:decode(body)
+    end)
     if not ok or type(decoded) ~= "table" then return nil end
     local songs = {}
     for _, item in ipairs(decoded) do
@@ -150,7 +155,9 @@ function Menu.load()
                 if love.filesystem.getInfo(manifestPath) then
                     local manifestData = love.filesystem.read(manifestPath)
                     if manifestData then
-                        local ok, decoded = pcall(json.decode, json, manifestData)
+                        local ok, decoded = pcall(function()
+                            return json:decode(manifestData)
+                        end)
                         if ok and decoded then
                             decoded.filename = file
                             decoded.folderPath = targetFolder
