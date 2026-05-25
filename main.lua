@@ -2,7 +2,7 @@ local json = require "json"
 local Menu = require "menu"
 
 local settings = {
-    repositoryUrl = "http://192.168.1.X:3000",
+    repositoryUrl = "http://192.168.100.8:8080",
     eyeCandy = true,
     framerateCap = 60
 }
