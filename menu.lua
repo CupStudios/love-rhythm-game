@@ -215,6 +215,39 @@ function Menu.importFromAndroidFolders()
     return false
 end
 
+function Menu.importFromAndroidFolders()
+    local importedCount = 0
+    love.filesystem.createDirectory("songs")
+
+    for _, folder in ipairs(androidImportPaths) do
+        local command = string.format('ls -1 "%s" 2>/dev/null', folder)
+        local pipe = io.popen(command)
+        if pipe then
+            for entry in pipe:lines() do
+                if entry:lower():match("%.lrg$") then
+                    local sourcePath = folder .. "/" .. entry
+                    local destination = "songs/" .. entry
+                    if not love.filesystem.getInfo(destination) and copyFileFromAbsolutePath(sourcePath, destination) then
+                        importedCount = importedCount + 1
+                    end
+                end
+            end
+            pipe:close()
+        end
+    end
+
+    if importedCount > 0 then
+        Menu.importMessage = string.format("Imported %d song(s) from Android folders", importedCount)
+        Menu.importMessageTimer = 4
+        Menu.load()
+        return true
+    end
+
+    Menu.importMessage = "No .lrg files found. Put songs in Download or Android/data/.../songs"
+    Menu.importMessageTimer = 5
+    return false
+end
+
 function Menu.update(dt)
     if Menu.importMessageTimer > 0 then Menu.importMessageTimer = Menu.importMessageTimer - dt end
     if Menu.onlineStatusTimer > 0 then Menu.onlineStatusTimer = Menu.onlineStatusTimer - dt end
