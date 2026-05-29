@@ -26,6 +26,52 @@ local editor = {
 
 local keys = { d = 1, f = 2, j = 3, k = 4 }
 
+local CHART_VERSION = "1.0"
+local DEFAULT_DIFFICULTY = "hard"
+
+local function copyNote(note)
+    local copied = {}
+    if type(note) == "table" then
+        for key, value in pairs(note) do
+            copied[key] = value
+        end
+    end
+    return copied
+end
+
+local function chartPathFromManifest(manifest)
+    if type(manifest.difficulties) ~= "table" then return nil end
+    return manifest.difficulties[DEFAULT_DIFFICULTY] or manifest.difficulties.hard
+end
+
+local function setEditorNote(beat, lane, noteData)
+    if type(beat) ~= "number" or type(lane) ~= "number" then return end
+    if lane < 1 or lane > 4 then return end
+
+    local note = copyNote(noteData)
+    note.beat = beat
+    note.dir = lane
+
+    editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
+    editor.notes[beat][lane] = note
+end
+
+local function toggleEditorNote(beat, lane)
+    editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
+    if editor.notes[beat][lane] then
+        editor.notes[beat][lane] = false
+    else
+        editor.notes[beat][lane] = { beat = beat, dir = lane }
+    end
+end
+
+local function buildExportNote(beat, lane, noteData)
+    local note = type(noteData) == "table" and copyNote(noteData) or {}
+    note.beat = tonumber(note.beat) or beat
+    note.dir = tonumber(note.dir) or lane
+    return note
+end
+
 function love.load()
     love.window.setTitle("LRG Chart Editor")
     love.window.setMode(1000, 700, {resizable = true})
@@ -128,7 +174,7 @@ function loadLRG(file)
     end
 
     -- ── Leer chart (dificultad hard) ─────────────────────────
-    local chartFile = manifest.difficulties and manifest.difficulties.hard
+    local chartFile = chartPathFromManifest(manifest)
     if not chartFile then
         love.filesystem.unmount(filepath)
         editor.statusMessage = "Error: sin dificultad en manifest"
@@ -174,22 +220,21 @@ function loadLRG(file)
     -- ── Poblar el estado del editor ──────────────────────────
     editor.chartTitle = manifest.title  or "Untitled"
     editor.artist     = manifest.artist or "Unknown Artist"
-    editor.bpm        = tonumber(manifest.bpm)    or 144
-    editor.offset     = tonumber(manifest.offset) or 0   -- TAREA 2: leer offset
+    editor.bpm        = tonumber(manifest.bpm) or tonumber(chartDecoded.bpm) or 144
+    editor.offset     = tonumber(manifest.offset) or tonumber(chartDecoded.offset) or 0   -- TAREA 2: leer offset
     editor.songName   = audioFile or "audio.ogg"
     editor.song       = songSource
     editor.songData   = audioDataRaw
     editor.notes      = {}
     editor.scroll     = 0
 
-    -- Reconstruir tabla de notas desde el chart
+    -- Reconstruir tabla de notas desde el chart preservando propiedades
+    -- nuevas del formato (por ejemplo holds) sin alterar el editor visual.
     for _, note in ipairs(chartDecoded.notes or {}) do
-        local b = note.beat
-        if b then
-            editor.notes[b] = editor.notes[b] or {false, false, false, false}
-            if type(note.dir) == "number" and note.dir >= 1 and note.dir <= 4 then
-                editor.notes[b][note.dir] = true
-            end
+        if type(note) == "table" then
+            local b = tonumber(note.beat)
+            local lane = tonumber(note.dir)
+            setEditorNote(b, lane, note)
         end
     end
 
@@ -222,14 +267,14 @@ function exportLRG()
     love.filesystem.write(outDir .. "/" .. editor.songName, editor.songData)
 
     -- ── Construye y escribe chart.json ───────────────────────
-    local exportChart = { bpm = editor.bpm, notes = {} }
+    local exportChart = { version = CHART_VERSION, bpm = editor.bpm, offset = editor.offset, notes = {} }
     local beats = {}
     for b, _ in pairs(editor.notes) do table.insert(beats, b) end
     table.sort(beats)
     for _, b in ipairs(beats) do
         for lane, active in ipairs(editor.notes[b]) do
             if active then
-                table.insert(exportChart.notes, { beat = b, dir = lane })
+                table.insert(exportChart.notes, buildExportNote(b, lane, active))
             end
         end
     end
@@ -290,8 +335,7 @@ function love.mousepressed(x, y, button)
             local lane = math.floor((x - startX) / 60) + 1
             local beat = math.floor(-(y - (sh - 100) + editor.scroll) / editor.spacing) * editor.snap
             if beat >= 0 then
-                editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
-                editor.notes[beat][lane] = not editor.notes[beat][lane]
+                toggleEditorNote(beat, lane)
             end
         end
 
@@ -337,8 +381,7 @@ function love.keypressed(key)
                 or  (editor.scroll / (editor.spacing / editor.snap))
             local snappedBeat = math.floor((currentBeat / editor.snap) + 0.5) * editor.snap
             if snappedBeat >= 0 then
-                editor.notes[snappedBeat] = editor.notes[snappedBeat] or {false, false, false, false}
-                editor.notes[snappedBeat][lane] = true
+                setEditorNote(snappedBeat, lane, { beat = snappedBeat, dir = lane })
             end
         end
     end
