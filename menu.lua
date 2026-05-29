@@ -130,6 +130,26 @@ function Menu.setSettingsHandlers(settingsRef, saveFn)
     Menu.saveSettings = saveFn
 end
 
+local function copyRecursive(src, dst)
+    love.filesystem.createDirectory(dst)
+    local items = love.filesystem.getDirectoryItems(src)
+    for _, item in ipairs(items) do
+        local sPath = src .. "/" .. item
+        local dPath = dst .. "/" .. item
+        local info = love.filesystem.getInfo(sPath)
+        if info then
+            if info.type == "directory" then
+                copyRecursive(sPath, dPath)
+            elseif info.type == "file" then
+                local fileData = love.filesystem.read(sPath)
+                if fileData then
+                    love.filesystem.write(dPath, fileData)
+                end
+            end
+        end
+    end
+end
+
 function Menu.load()
     Menu.songs = {}
     love.filesystem.createDirectory("songs")
@@ -152,12 +172,7 @@ function Menu.load()
                     insideItems = love.filesystem.getDirectoryItems(tempMount .. "/" .. insideItems[1])
                 end
 
-                for _, item in ipairs(insideItems) do
-                    local fileData = love.filesystem.read(tempMount .. "/" .. sourceSubfolder .. item)
-                    if fileData then
-                        love.filesystem.write(targetFolder .. "/" .. item, fileData)
-                    end
-                end
+                copyRecursive(tempMount .. "/" .. sourceSubfolder, targetFolder)
 
                 love.filesystem.unmount(filepath)
 
@@ -233,7 +248,10 @@ function Menu.downloadOnlineSong(song)
     if not song or not song.file then return end
     ensureDownloadThread()
 
-    local url = GetFilesApiBase() .. song.file
+    -- Aseguramos que la URL sea válida reemplazando espacios por %20
+    local safeFilename = string.gsub(song.file, " ", "%%20")
+    local url = GetFilesApiBase() .. safeFilename
+    
     love.thread.getChannel("download_request"):push(url .. "|" .. song.file)
     Menu.onlineStatus = "Descargando " .. song.file .. "..."
     Menu.onlineStatusTimer = 6
