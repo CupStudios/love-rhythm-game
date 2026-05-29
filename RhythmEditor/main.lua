@@ -20,11 +20,159 @@ local editor = {
     songData     = nil,
     chartTitle   = "My_Awesome_Chart",
     artist       = "Unknown Artist",
+    serverUrl    = "http://localhost:3000",
+    keyBindings  = { "d", "f", "j", "k" },
+    previousState = "menu",
     statusMessage = "",
     focus        = nil
 }
 
-local keys = { d = 1, f = 2, j = 3, k = 4 }
+local keys = {}
+
+local CHART_VERSION = "1.0"
+local DEFAULT_DIFFICULTY = "hard"
+local SETTINGS_FILE = "settings.json"
+local DEFAULT_SETTINGS = {
+    serverUrl = "http://localhost:3000",
+    keyBindings = { "d", "f", "j", "k" }
+}
+local settings = {
+    serverUrl = DEFAULT_SETTINGS.serverUrl,
+    keyBindings = { "d", "f", "j", "k" }
+}
+local settingsFields = {
+    { focus = "serverUrl", label = "Server URL:" },
+    { focus = "key1", label = "Lane 1 key:" },
+    { focus = "key2", label = "Lane 2 key:" },
+    { focus = "key3", label = "Lane 3 key:" },
+    { focus = "key4", label = "Lane 4 key:" }
+}
+
+local function copyDefaultKeyBindings()
+    return {
+        DEFAULT_SETTINGS.keyBindings[1],
+        DEFAULT_SETTINGS.keyBindings[2],
+        DEFAULT_SETTINGS.keyBindings[3],
+        DEFAULT_SETTINGS.keyBindings[4]
+    }
+end
+
+local function normalizeKey(value, fallback)
+    if type(value) ~= "string" or value == "" then return fallback end
+    return value:sub(1, 1):lower()
+end
+
+local function rebuildKeyMap()
+    keys = {}
+    for lane = 1, 4 do
+        local key = normalizeKey(settings.keyBindings[lane], DEFAULT_SETTINGS.keyBindings[lane])
+        settings.keyBindings[lane] = key
+        keys[key] = lane
+    end
+end
+
+local function applySettings()
+    if type(settings.serverUrl) ~= "string" or settings.serverUrl == "" then
+        settings.serverUrl = DEFAULT_SETTINGS.serverUrl
+    end
+    if type(settings.keyBindings) ~= "table" then
+        settings.keyBindings = copyDefaultKeyBindings()
+    end
+    for lane = 1, 4 do
+        settings.keyBindings[lane] = normalizeKey(settings.keyBindings[lane], DEFAULT_SETTINGS.keyBindings[lane])
+    end
+
+    editor.serverUrl = settings.serverUrl
+    editor.keyBindings = settings.keyBindings
+    rebuildKeyMap()
+end
+
+local function loadSettings()
+    settings = {
+        serverUrl = DEFAULT_SETTINGS.serverUrl,
+        keyBindings = copyDefaultKeyBindings()
+    }
+
+    if love.filesystem.getInfo(SETTINGS_FILE) then
+        local data = love.filesystem.read(SETTINGS_FILE)
+        local ok, decoded = pcall(json.decode, json, data)
+        if ok and type(decoded) == "table" then
+            if type(decoded.serverUrl) == "string" then
+                settings.serverUrl = decoded.serverUrl
+            end
+            if type(decoded.keyBindings) == "table" then
+                for lane = 1, 4 do
+                    settings.keyBindings[lane] = decoded.keyBindings[lane] or settings.keyBindings[lane]
+                end
+            end
+        end
+    end
+
+    applySettings()
+end
+
+local function saveSettings()
+    applySettings()
+    if love.filesystem.write(SETTINGS_FILE, json:encode(settings)) then
+        editor.statusMessage = "Configuración guardada en " .. SETTINGS_FILE
+    else
+        editor.statusMessage = "Error guardando " .. SETTINGS_FILE
+    end
+end
+
+local function openSettings()
+    editor.previousState = editor.state
+    editor.state = "settings"
+    editor.focus = nil
+end
+
+local function closeSettings()
+    editor.state = editor.previousState or "menu"
+    editor.focus = nil
+end
+
+local function copyNote(note)
+    local copied = {}
+    if type(note) == "table" then
+        for key, value in pairs(note) do
+            copied[key] = value
+        end
+    end
+    return copied
+end
+
+local function chartPathFromManifest(manifest)
+    if type(manifest.difficulties) ~= "table" then return nil end
+    return manifest.difficulties[DEFAULT_DIFFICULTY] or manifest.difficulties.hard
+end
+
+local function setEditorNote(beat, lane, noteData)
+    if type(beat) ~= "number" or type(lane) ~= "number" then return end
+    if lane < 1 or lane > 4 then return end
+
+    local note = copyNote(noteData)
+    note.beat = beat
+    note.dir = lane
+
+    editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
+    editor.notes[beat][lane] = note
+end
+
+local function toggleEditorNote(beat, lane)
+    editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
+    if editor.notes[beat][lane] then
+        editor.notes[beat][lane] = false
+    else
+        editor.notes[beat][lane] = { beat = beat, dir = lane }
+    end
+end
+
+local function buildExportNote(beat, lane, noteData)
+    local note = type(noteData) == "table" and copyNote(noteData) or {}
+    note.beat = tonumber(note.beat) or beat
+    note.dir = tonumber(note.dir) or lane
+    return note
+end
 
 local CHART_VERSION = "1.0"
 local DEFAULT_DIFFICULTY = "hard"
@@ -76,13 +224,23 @@ function love.load()
     love.window.setTitle("LRG Chart Editor")
     love.window.setMode(1000, 700, {resizable = true})
     love.keyboard.setKeyRepeat(true)
+    loadSettings()
 end
 
 -- ============================================================
 --  Text input  — CAMBIO MÍNIMO: añade rama para "offset"
 -- ============================================================
 function love.textinput(t)
-    if editor.state == "edit" then
+    if editor.state == "settings" then
+        if editor.focus == "serverUrl" then
+            settings.serverUrl = settings.serverUrl .. t
+        elseif editor.focus and editor.focus:match("^key%d$") then
+            local lane = tonumber(editor.focus:sub(4, 4))
+            if lane then
+                settings.keyBindings[lane] = t:sub(1, 1):lower()
+            end
+        end
+    elseif editor.state == "edit" then
         if editor.focus == "title" then
             editor.chartTitle = editor.chartTitle .. t
         elseif editor.focus == "bpm" then
@@ -317,7 +475,34 @@ end
 -- ============================================================
 function love.mousepressed(x, y, button)
     local sw, sh = love.graphics.getDimensions()
-    if editor.state == "edit" and button == 1 then
+    if button ~= 1 then return end
+
+    if editor.state == "menu" then
+        if x > sw / 2 - 100 and x < sw / 2 + 100 and y > sh / 2 + 70 and y < sh / 2 + 115 then
+            openSettings()
+        end
+        return
+    end
+
+    if editor.state == "settings" then
+        local panelW, panelH = 520, 470
+        local panelX, panelY = (sw - panelW) / 2, (sh - panelH) / 2
+        editor.focus = nil
+        for i, field in ipairs(settingsFields) do
+            local fieldY = panelY + 80 + ((i - 1) * 60)
+            if x > panelX + 30 and x < panelX + panelW - 30 and y > fieldY + 22 and y < fieldY + 50 then
+                editor.focus = field.focus
+            end
+        end
+        if x > panelX + 80 and x < panelX + 240 and y > panelY + panelH - 70 and y < panelY + panelH - 25 then
+            saveSettings()
+        elseif x > panelX + 280 and x < panelX + 440 and y > panelY + panelH - 70 and y < panelY + panelH - 25 then
+            closeSettings()
+        end
+        return
+    end
+
+    if editor.state == "edit" then
         local panelX = sw - 300
         editor.focus = nil
 
@@ -339,6 +524,12 @@ function love.mousepressed(x, y, button)
             end
         end
 
+        -- Settings button
+        if x > panelX + 50 and x < panelX + 250 and y > sh - 140 and y < sh - 95 then
+            openSettings()
+            return
+        end
+
         -- Export button (sin cambios de posición)
         if x > panelX + 50 and x < panelX + 250 and y > sh - 80 and y < sh - 30 then
             exportLRG()
@@ -351,9 +542,32 @@ end
 --  "offset". Todo lo demás permanece intacto.
 -- ============================================================
 function love.keypressed(key)
+    if editor.state == "settings" then
+        if key == "backspace" then
+            if editor.focus == "serverUrl" then
+                settings.serverUrl = settings.serverUrl:sub(1, -2)
+            elseif editor.focus and editor.focus:match("^key%d$") then
+                local lane = tonumber(editor.focus:sub(4, 4))
+                if lane then settings.keyBindings[lane] = "" end
+            end
+        elseif key == "return" then
+            if editor.focus then
+                editor.focus = nil
+            else
+                saveSettings()
+            end
+        elseif key == "escape" then
+            closeSettings()
+        end
+        return
+    end
+
     if editor.state ~= "edit" then return end
 
-    if key == "backspace" then
+    if key == "escape" then
+        openSettings()
+        return
+    elseif key == "backspace" then
         if editor.focus == "title" then
             editor.chartTitle = editor.chartTitle:sub(1, -2)
         elseif editor.focus == "bpm" then
@@ -406,6 +620,48 @@ function love.draw()
     if editor.state == "menu" then
         love.graphics.clear(0.1, 0.1, 0.15)
         love.graphics.printf("Arrastra un .ogg/.mp3 para crear\no un .lrg para editar", 0, sh/2 - 20, sw, "center")
+        love.graphics.setColor(0.2, 0.4, 0.7)
+        love.graphics.rectangle("fill", sw / 2 - 100, sh / 2 + 70, 200, 45, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("Configuración", sw / 2 - 100, sh / 2 + 84, 200, "center")
+        return
+    elseif editor.state == "settings" then
+        love.graphics.clear(0.08, 0.08, 0.12)
+        local panelW, panelH = 520, 470
+        local panelX, panelY = (sw - panelW) / 2, (sh - panelH) / 2
+
+        love.graphics.setColor(0.12, 0.12, 0.18)
+        love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 8)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("CONFIGURACIÓN", panelX, panelY + 25, panelW, "center")
+
+        for i, field in ipairs(settingsFields) do
+            local fieldY = panelY + 80 + ((i - 1) * 60)
+            local value = settings.serverUrl
+            if field.focus ~= "serverUrl" then
+                value = settings.keyBindings[i - 1] or ""
+            end
+
+            love.graphics.setColor(0.7, 0.7, 1)
+            love.graphics.print(field.label, panelX + 30, fieldY)
+            love.graphics.setColor(editor.focus == field.focus and {1, 1, 1} or {0.5, 0.5, 0.5})
+            love.graphics.rectangle("line", panelX + 30, fieldY + 22, panelW - 60, 28)
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.print(value .. (editor.focus == field.focus and "|" or ""), panelX + 36, fieldY + 28)
+        end
+
+        if editor.statusMessage ~= "" then
+            love.graphics.setColor(0.4, 1, 0.4)
+            love.graphics.printf(editor.statusMessage, panelX + 30, panelY + panelH - 105, panelW - 60, "center")
+        end
+
+        love.graphics.setColor(0.2, 0.6, 0.2)
+        love.graphics.rectangle("fill", panelX + 80, panelY + panelH - 70, 160, 45, 5)
+        love.graphics.setColor(0.5, 0.2, 0.2)
+        love.graphics.rectangle("fill", panelX + 280, panelY + panelH - 70, 160, 45, 5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.printf("Guardar", panelX + 80, panelY + panelH - 56, 160, "center")
+        love.graphics.printf("Volver", panelX + 280, panelY + panelH - 56, 160, "center")
         return
     end
 
@@ -471,11 +727,16 @@ function love.draw()
     love.graphics.setColor(1, 1, 1)
     love.graphics.print(tostring(editor.offset) .. (editor.focus == "offset" and "|" or ""), panelX + 25, 285)
 
-    -- UI anclada al fondo (sin cambios)
+    -- UI anclada al fondo
     if editor.statusMessage ~= "" then
         love.graphics.setColor(0.4, 1, 0.4)
-        love.graphics.printf(editor.statusMessage, panelX + 20, sh - 140, 260, "center")
+        love.graphics.printf(editor.statusMessage, panelX + 20, sh - 190, 260, "center")
     end
+
+    love.graphics.setColor(0.2, 0.4, 0.7)
+    love.graphics.rectangle("fill", panelX + 50, sh - 140, 200, 45, 5)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.printf("Configuración", panelX + 50, sh - 127, 200, "center")
 
     love.graphics.setColor(0.2, 0.6, 0.2)
     love.graphics.rectangle("fill", panelX + 50, sh - 80, 200, 50, 5)
