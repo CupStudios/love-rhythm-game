@@ -6,33 +6,28 @@ local statusChannel = love.thread.getChannel("download_status")
 
 while true do
     local payload = requestChannel:demand()
-    if payload == "__quit__" then
-        break
-    end
+    if payload == "__quit__" then break end
 
     local url, filename = payload:match("^(.-)|(.+)$")
-    if not url or not filename then
-        statusChannel:push("error|Invalid download payload")
+    
+    -- FORZAR ENCODIFICACIÓN URL (importante para espacios)
+    url = string.gsub(url, " ", "%%20")
+
+    local chunks = {}
+    -- Usamos un timeout para que el juego no se congele si el server tarda
+    local res, code, headers, status = http.request({
+        url = url,
+        sink = ltn12.sink.table(chunks),
+        timeout = 10 
+    })
+
+    if code == 200 then
+        -- En lugar de escribir aquí, enviamos los datos al canal principal
+        -- para que el hilo principal (main thread) guarde el archivo
+        local data = table.concat(chunks)
+        love.thread.getChannel("file_data"):push({filename = filename, data = data})
+        statusChannel:push("done|" .. filename)
     else
-        statusChannel:push("progress|Descargando " .. filename .. "...")
-
-        local chunks = {}
-        local _, code = http.request({
-            url = url,
-            sink = ltn12.sink.table(chunks)
-        })
-
-        if code == 200 then
-            local data = table.concat(chunks)
-            love.filesystem.createDirectory("songs")
-            local ok = love.filesystem.write("songs/" .. filename, data)
-            if ok then
-                statusChannel:push("done|" .. filename)
-            else
-                statusChannel:push("error|No se pudo guardar " .. filename)
-            end
-        else
-            statusChannel:push("error|HTTP " .. tostring(code) .. " al descargar " .. filename)
-        end
+        statusChannel:push("error|HTTP " .. tostring(code))
     end
 end
