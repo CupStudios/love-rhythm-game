@@ -165,18 +165,18 @@ function Menu.load()
 
             local tempMount = "temp_" .. folderName
             if love.filesystem.mount(filepath, tempMount) then
-                local insideItems = love.filesystem.getDirectoryItems(tempMount)
-                local sourceSubfolder = ""
-                if #insideItems == 1 and love.filesystem.getInfo(tempMount .. "/" .. insideItems[1]).type == "directory" then
-                    sourceSubfolder = insideItems[1] .. "/"
-                    insideItems = love.filesystem.getDirectoryItems(tempMount .. "/" .. insideItems[1])
-                end
-
-                copyRecursive(tempMount .. "/" .. sourceSubfolder, targetFolder)
-
+                -- Escaneamos la raíz del montaje directamente
+                copyRecursive(tempMount, targetFolder)
                 love.filesystem.unmount(filepath)
 
                 local manifestPath = targetFolder .. "/manifest.json"
+                -- Si no está en la raíz, buscamos en el primer nivel (por si acaso)
+                if not love.filesystem.getInfo(manifestPath) then
+                    local items = love.filesystem.getDirectoryItems(targetFolder)
+                    if #items > 0 then
+                        manifestPath = targetFolder .. "/" .. items[1] .. "/manifest.json"
+                    end
+                end
                 if love.filesystem.getInfo(manifestPath) then
                     local manifestData = love.filesystem.read(manifestPath)
                     if manifestData then
