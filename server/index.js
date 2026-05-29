@@ -17,7 +17,11 @@ const app = Fastify({
 const PORT = 8080;
 const HOST = '0.0.0.0';
 
-app.register(multipart);
+app.register(multipart, {
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50 MB
+  }
+});
 
 app.register(fastifyStatic, {
     root: path.join(__dirname, 'public'),
