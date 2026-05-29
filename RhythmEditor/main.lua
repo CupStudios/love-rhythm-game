@@ -174,52 +174,6 @@ local function buildExportNote(beat, lane, noteData)
     return note
 end
 
-local CHART_VERSION = "1.0"
-local DEFAULT_DIFFICULTY = "hard"
-
-local function copyNote(note)
-    local copied = {}
-    if type(note) == "table" then
-        for key, value in pairs(note) do
-            copied[key] = value
-        end
-    end
-    return copied
-end
-
-local function chartPathFromManifest(manifest)
-    if type(manifest.difficulties) ~= "table" then return nil end
-    return manifest.difficulties[DEFAULT_DIFFICULTY] or manifest.difficulties.hard
-end
-
-local function setEditorNote(beat, lane, noteData)
-    if type(beat) ~= "number" or type(lane) ~= "number" then return end
-    if lane < 1 or lane > 4 then return end
-
-    local note = copyNote(noteData)
-    note.beat = beat
-    note.dir = lane
-
-    editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
-    editor.notes[beat][lane] = note
-end
-
-local function toggleEditorNote(beat, lane)
-    editor.notes[beat] = editor.notes[beat] or {false, false, false, false}
-    if editor.notes[beat][lane] then
-        editor.notes[beat][lane] = false
-    else
-        editor.notes[beat][lane] = { beat = beat, dir = lane }
-    end
-end
-
-local function buildExportNote(beat, lane, noteData)
-    local note = type(noteData) == "table" and copyNote(noteData) or {}
-    note.beat = tonumber(note.beat) or beat
-    note.dir = tonumber(note.dir) or lane
-    return note
-end
-
 function love.load()
     love.window.setTitle("LRG Chart Editor")
     love.window.setMode(1000, 700, {resizable = true})

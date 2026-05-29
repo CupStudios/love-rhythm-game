@@ -80,7 +80,7 @@ loadSettings()
 local SONGS_API = settings.repositoryUrl .. "songs.json"
 local function GetFilesApiBase()
     -- Siempre toma el valor actual desde settings (que ya se actualizó al cargar)
-    return settings.repositoryUrl .. "files/"
+    return settings.repositoryUrl .. "api/download/"
 end
 local downloadThread
 
@@ -114,10 +114,10 @@ local function parseOnlineSongsJson(body)
 
     local songs = {}
     for _, item in ipairs(decoded) do
-        if type(item) == "table" and item.file then
+        if type(item) == "table" and item.filename then
             table.insert(songs, {
-                title = item.title or item.file,
-                file = item.file
+                title = item.title or item.filename,
+                file = item.filename
             })
         end
     end
